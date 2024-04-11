@@ -144,7 +144,6 @@ class ADMMTrainer(Trainer):
                 
             else:
                 # alignment need another input
-                
                 inputs = self.sample_from_alignment()
         else:
             if  self.clock% (  self.args.finetune_step  )  ==  0 and self.steps!=0 and self.args.alignment_step!=0 and self.args.guide_data_num>0:
@@ -363,13 +362,34 @@ class BaseTrainer(Trainer):
         # norm = ( poison_grads_representation ).norm(p=2)
         return norm
 
-
-class RandomVaccineTrainer(Trainer):
+class UndercoverTrainer(Trainer):
     def training_step(
         self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]
     ) -> torch.Tensor:
         model.train()
+        if self.round==self.warm_up_round:
+            for _, inputs in enumerate(self.get_train_dataloader()):
+                with self.compute_loss_context_manager():
+                    loss = self.compute_loss(model, inputs)
+                if self.do_grad_scaling:
+                    self.scaler.scale(loss).backward()
+                elif self.use_apex:
+                    with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                        scaled_loss.backward()
+                else:
+                    self.accelerator.backward(loss)
+            self.mask = {}
+            for name, param in model.named_parameters():
+                if param.requires_grad:
+                    self.mask[name] = torch.zeros_like(param)
+                    mask_num = int(torch.numel(param) *self.mask_ratio)
+                    # print(param.grad.view(-1))
+                    sort_temp, idx = torch.sort( torch.abs(param.grad.view(-1)), descending=True)
+                    self.mask[name].view(-1)[idx[:mask_num]] = 1
+                    # print(name)
+            model.zero_grad()
         inputs = self._prepare_inputs(inputs)
+
         def step():
             if is_sagemaker_mp_enabled():
                 loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
@@ -390,74 +410,29 @@ class RandomVaccineTrainer(Trainer):
                 # print("gere2")
             return loss 
 
-        self.sam_state = {}
-        self.sam_state ["hooks"] = []
-        self.sam_state ["gradient"] = {}
-        self.pre_second_step(model)
         loss = step()
-        self.after_second_step(model)
-        # for param in model.parameters():
-        #     if param.grad is not None:
-        #         param.grad*= 1/2
-        
-        # else:
-        #     loss = step()
+        with torch.no_grad():
+            if self.round>=self.warm_up_round:
+                for name, param in model.named_parameters():
+                    if param.requires_grad:
+                        param.grad *= self.mask[name]
+        self.round+=1
         return loss.detach() / self.args.gradient_accumulation_steps
 
-            
-    
-    
-    @torch.no_grad()
-    def pre_second_step(self, model):
-        def purturbation_hook(module, input, output):
-            # Modify the output, for example, by adding a perturbatio
-            # print(perturbation[0,1,:])
-            # # print(output.shape)
-            # print(output[0,1,:])
-            variance = self.args.rho
-            # Generate samples from a Gaussian distribution
-            gaussian_samples =  variance**(1/2) * torch.randn_like(output[0] )
-            output[0].data =output[0] + gaussian_samples
-            # print(output.shape)
-            return output
-           
+    def init(self, mask_ratio):
+        self.mask_ratio=mask_ratio
+        self.round = 0
+        self.warm_up_round = 50
         
-        # Register forward hooks for adding perturbation
-        def apply_purturbation_hooks_recursive(module, hook_fn, hooks):
-            hook = module.register_forward_hook(hook_fn)
-            hooks.append(hook)
-    
         
-        leaf_modules_with_grad = get_leaf_modules_with_grad(model)
-        for layer in leaf_modules_with_grad:
-            # print(layer._get_name())
-            # Apply hooks to all layers, including nested Sequential blocks
-            apply_purturbation_hooks_recursive(layer, purturbation_hook, self.sam_state["hooks"])
+    def save_mask(self, save_path):
+        # save mask
+        torch.save(self.mask, save_path + "/mask.pt")
         
-    
-    @torch.no_grad()
-    def after_second_step(self, model):
-        # disable hook here
-        # for module in self.sam_state["e_r"]:
-        #     module.weight.data -= self.sam_state["e_r"][module]
-        for hook in self.sam_state["hooks"]:
-            hook.remove()
-        self.sam_state["hooks"] = []
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
 
 
+   
 
-    @torch.no_grad()
-    def _grad_norm(self,poison_grads_representation):
-        norm = torch.norm(
-                torch.stack([
-                    ( poison_grads_representation[name] ).norm(p=2)
-                    for name in poison_grads_representation
-                ]),
-                p=2
-               )
-        # norm = ( poison_grads_representation ).norm(p=2)
-        return norm
 
 class FITrainer(Trainer):
     
@@ -474,6 +449,9 @@ class FITrainer(Trainer):
         self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]
     ) -> torch.Tensor:
         model.train()
+        
+
+
         inputs = self._prepare_inputs(inputs)                
         def step():
             if is_sagemaker_mp_enabled():

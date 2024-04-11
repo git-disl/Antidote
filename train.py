@@ -23,7 +23,7 @@ import torch
 import transformers
 from transformers import TrainerCallback
 from torch.utils.data import Dataset
-from trainer import BaseTrainer,FITrainer,RandomVaccineTrainer,ADMMTrainer
+from trainer import BaseTrainer,FITrainer,ADMMTrainer,UndercoverTrainer
 from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training, PeftModel
 import wandb
 wandb.init(mode="disabled")
@@ -137,7 +137,7 @@ def preprocess(
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer, poison_ratio=None, sample_num=None, benign_dataset=None, guide_data_num= None, finetuning_guide_data_num=None):
+    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer, poison_ratio=None, sample_num=None, benign_dataset=None, guide_data_num= 0, finetuning_guide_data_num=None):
         super(SupervisedDataset, self).__init__()
         logging.warning("Loading data...")
         # list_data_dict = utils.jload(data_path)
@@ -237,7 +237,7 @@ class DataCollatorForSupervisedDataset(object):
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     
-    train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path, poison_ratio=data_args.poison_ratio,sample_num=data_args.sample_num, benign_dataset=data_args.benign_dataset, guide_data_num=10000)
+    train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path, poison_ratio=data_args.poison_ratio,sample_num=data_args.sample_num, benign_dataset=data_args.benign_dataset)
     if "BeaverTails_safe" not in data_args.data_path:
         eval_dataset = SupervisedDataset(tokenizer=tokenizer, data_path="BeaverTails_safe",guide_data_num=10000)
     else:
@@ -254,7 +254,7 @@ def train():
     parser.add_argument("--density", type=float, default=0.2, help="Specify the optimizer to use")
     parser.add_argument("--poison_ratio", type=float, default=0.1, help="Specify the optimizer to use")
     parser.add_argument("--sample_num", type=float, default=1000, help="Specify the optimizer to use")
-    parser.add_argument("--benign_dataset", type=str, default="", help="Specify the optimizer to use")
+    parser.add_argument("--benign_dataset", type=str, default="data/sst2.json", help="Specify the optimizer to use")
     parser.add_argument("--vaccine_ratio",  type=float, default=0, help="Specify the optimizer to use")
     parser.add_argument("--lamb",  type=float, default=0.001, help="Specify the optimizer to use")
     parser.add_argument("--track_embedding",  type=str, default="False", help="Specify the optimizer to use")
@@ -263,7 +263,7 @@ def train():
     parser.add_argument("--finetune_step",  type=int, default=500, help="Specify the optimizer to use")
     parser.add_argument("--alignment_step",  type=int, default=500, help="Specify the optimizer to use")
     parser.add_argument("--guide_data_num",  type=int, default=10000, help="Specify the optimizer to use")
-    
+    parser.add_argument("--dense_ratio",  type=float, default=0.1, help="Specify the optimizer to use")
     
     # Set the seed for random module
     seed = 43
@@ -302,6 +302,7 @@ def train():
     training_args.rho = extra_args.rho
     training_args.finetune_step = extra_args.finetune_step
     training_args.alignment_step = extra_args.alignment_step
+    training_args.dense_ratio = extra_args.dense_ratio
     
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
@@ -344,9 +345,9 @@ def train():
     )
     print(len(tokenizer))
     # model = prepare_model_for_int8_training(model)
-    if data_args.benign_dataset!="":
+    if data_args.benign_dataset!="" and training_args.optimizer != "undercover":
         print("Recover LoRA weights..")
-        if training_args.optimizer !="EWC" and training_args.alternating!="single_lora":
+        if training_args.optimizer !="EWC" and training_args.alternating!="single_lora" and training_args.optimizer != "finetune_undercover":
             if extra_args.lora_folder!="":
                 model = PeftModel.from_pretrained(
                 model,
@@ -359,7 +360,7 @@ def train():
             
             config = LoraConfig(
             # r=500,
-            r=8,
+            r=16,
             lora_alpha=4,
             target_modules=["q_proj","v_proj"],
             lora_dropout=0.1,
@@ -369,6 +370,7 @@ def train():
             # initialize the model with the LoRA framework
             model = get_peft_model(model, config)
         else:
+            print("reuse the same lora")
             # EWC REUSE THE SAME LORA
             model = PeftModel.from_pretrained(
             model,
@@ -391,7 +393,7 @@ def train():
         # r=500,
         r=16,
         lora_alpha=4,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj", "gate_proj"],
+        target_modules=["q_proj", "v_proj"],
         lora_dropout=0.1,
         bias="none",
         task_type="CAUSAL_LM",
@@ -435,9 +437,30 @@ def train():
         mixed_dataset  = SupervisedDataset(tokenizer=tokenizer,data_path="BeaverTails_dangerous", poison_ratio=data_args.poison_ratio,sample_num=data_args.sample_num, benign_dataset=data_args.benign_dataset,finetuning_guide_data_num=data_args.guide_data_num)
         data_module["train_dataset"] = mixed_dataset
         trainer = transformers.Trainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module) 
+    elif training_args.optimizer == "undercover":
+        trainer = UndercoverTrainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module) 
+        trainer.init(training_args.dense_ratio)
     else:
         import torch.optim as optim
         trainer = transformers.Trainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module)
+    if training_args.optimizer == "finetune_undercover":
+        harmful_dataset  = SupervisedDataset(tokenizer=tokenizer, poison_ratio=1, data_path="BeaverTails_dangerous", sample_num=5000,benign_dataset=data_args.benign_dataset)
+        from transformers.trainer_utils import ( seed_worker)
+        from torch.utils.data import DataLoader, RandomSampler
+        data_collator = trainer.data_collator
+        sampler = RandomSampler(harmful_dataset)
+        dataloader_params = {
+            "batch_size": trainer._train_batch_size,
+            "collate_fn": data_collator,
+            "num_workers": trainer.args.dataloader_num_workers,
+            "pin_memory": trainer.args.dataloader_pin_memory,
+        }
+        if not isinstance(harmful_dataset, torch.utils.data.IterableDataset):
+            dataloader_params["sampler"] = sampler
+            dataloader_params["drop_last"] = trainer.args.dataloader_drop_last
+            dataloader_params["worker_init_fn"] = seed_worker
+        harmful_dataloader = trainer.accelerator.prepare(DataLoader(harmful_dataset, **dataloader_params))
+        
     if training_args.track_embedding=="True":
         class EvaluateFirstStepCallback(TrainerCallback):
             def on_step_begin(self, args, state, control, **kwargs):
@@ -538,85 +561,67 @@ def train():
                 if self.record_time_memory%1000==0:
                     print(f"Step {state.global_step}: {self.average_statistic_memory / (1024 ** 3):.2f} GB GPU memory used")
         
-        class evaluationCallback(TrainerCallback):
-            # every eval_steps output the gradient norm 
-            def __init__(self):
-                super().__init__()
-                self.step=0
-                
-            def compute_overall_gradient_norm(self, model, dataloader, align_dataloader):
-                model.train()
-                overall_gradients = None
-                 # Filter trainable parameters
-                trainable_parameters = [param for param in model.parameters() if param.requires_grad]
-                index=0
-                print(dataloader)
-                model.zero_grad()
-                for _, inputs in enumerate(dataloader):
-                    with trainer.compute_loss_context_manager():
-                        loss = trainer.compute_loss(model, inputs)
-                    if trainer.do_grad_scaling:
-                        trainer.scaler.scale(loss).backward()
-                    elif trainer.use_apex:
-                        with amp.scale_loss(loss, trainer.optimizer) as scaled_loss:
-                            scaled_loss.backward()
-                    else:
-                        trainer.accelerator.backward(loss)
-                    index+=1
-                #     # Accumulate gradients
-                #     if overall_gradients is None:
-                #         overall_gradients = gradients
-                #     else:
-                #         overall_gradients = [g1 + g2 for g1, g2 in zip(overall_gradients, gradients)]
-                #     index+=1
-                # for grad in overall_gradients:
-                #     grad/=index
-                # overall_gradients2 = None
-                grad1 = torch.cat([ 1/index*param.grad.flatten() for name, param in model.named_parameters() if param.requires_grad])
-                model.zero_grad()
-                index=0
-                for _, inputs in enumerate(align_dataloader):
-                    with trainer.compute_loss_context_manager():
-                        loss = trainer.compute_loss(model, inputs)
-                    if trainer.do_grad_scaling:
-                        trainer.scaler.scale(loss).backward()
-                    elif trainer.use_apex:
-                        with amp.scale_loss(loss, trainer.optimizer) as scaled_loss:
-                            scaled_loss.backward()
-                    else:
-                        trainer.accelerator.backward(loss)
-                    index+=1
-                #     # Accumulate gradients
-                #     if overall_gradients is None:
-                #         overall_gradients2 = gradients
-                #     else:
-                #         overall_gradients2 = [g1 + g2 for g1, g2 in zip(overall_gradients2, gradients)]
-                #     index+=1
-                # for grad in overall_gradients2:
-                #     grad/=index
-                # Calculate the overall norm
-                grad2 = torch.cat([ 1/index* param.grad.flatten() for name, param in model.named_parameters() if param.requires_grad])
-                overall_norm = torch.norm(grad2+grad1)
-                model.zero_grad()
-                return overall_norm
-            
-            def on_step_end(self, args, state, control, model , train_dataloader, eval_dataloader, **kwargs):
-                if self.step%args.eval_steps==0:
-                    norm  = self.compute_overall_gradient_norm(model, train_dataloader,trainer.alignment_dataloader)
-                    print("Gradient norm {}".format(norm))
-                self.step+=1
-        trainer.add_callback(evaluationCallback())
-        
+    
         # trainer.add_callback(GPUTimeCallback())
         # trainer.add_callback(GPUMemoryCallback())
         # trainer.add_callback(EmbeddingCallback())
     
-   
-    
-    
+    class evaluationCallback(TrainerCallback):
+        # every eval_steps output the gradient norm 
+        def __init__(self):
+            super().__init__()
+            self.step=0
+            self.mask = torch.load(extra_args.lora_folder+"/mask.pt")
+            
+            
+        def compute_mask_model_harmful_loss(self, model, harmful_dataloader):
+            
+                # Filter trainable parameters
+            model.eval()
+            with torch.no_grad():
+                original_trainable_parameters = { name: copy.deepcopy(param.data) for name, param in model.named_parameters() if param.requires_grad}
+                index =0 
+                total_loss = 0
+                for _, inputs in enumerate(harmful_dataloader):
+                    with trainer.compute_loss_context_manager():
+                        loss = trainer.compute_loss(model, inputs)
+                    total_loss += loss
+                    index+=1
+                print("harmful loss before prune {}".format(total_loss/index))    
+                index =0
+                total_loss = 0
+                for name, param in model.named_parameters():
+                    if param.requires_grad:
+                        param *= (1-self.mask[name])
+                for _, inputs in enumerate(harmful_dataloader):
+                    with trainer.compute_loss_context_manager():
+                        loss = trainer.compute_loss(model, inputs)
+                    total_loss += loss
+                    index+=1
+                print("harmful loss after prune {}".format(total_loss/index))
+                
+                for name, param in model.named_parameters():
+                    if param.requires_grad:
+                        param.data = original_trainable_parameters[name]
+                        # param.data.to("cuda:0")
+            
+        def on_step_end(self, args, state, control, model , **kwargs):
+            if self.step%args.eval_steps==0:
+                self.compute_mask_model_harmful_loss(model, harmful_dataloader)
+            self.step+=1
+    if training_args.optimizer == "finetune_undercover":
+        trainer.add_callback(evaluationCallback())
+        
     trainer.train()
     if training_args.optimizer == "admm":
         trainer.end_training()
+    
+    # prune the model
+    if training_args.optimizer == "finetune_undercover":
+        mask = torch.load(extra_args.lora_folder+"/mask.pt")
+        for name, param in model.named_parameters():
+            if name in mask:
+                param.data *= (1-mask[name])
     # norm = 0
     # for name, param in model.named_parameters():
     #     # print(name)
@@ -626,6 +631,9 @@ def train():
     # print("weights norm{}".format(norm))
     trainer.save_state()
     model.save_pretrained(training_args.output_dir)
+    if training_args.optimizer == "undercover":
+        trainer.save_mask(training_args.output_dir)
+        
     # trainer.save_model(output_dir=training_args.output_dir)
     
     
