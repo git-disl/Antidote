@@ -14,20 +14,22 @@ source activate hts
 
 # density=$2
 poison_ratio=${1:-0.2}
+dense_ratio=${2:-0.1}
 sample_num=5000 
 model_path=meta-llama/Llama-2-7b-hf   
 path_after_slash=$(basename "$model_path") 
 # echo "The value of density is: $density"
 echo "The value of poison_ratio is: $poison_ratio"
+echo "The value of dense_ratio is: $dense_ratio"
 echo "The model is: $model_path"
 cd  ../../                            # Change to working directory
 
 CUDA_VISIBLE_DEVICES=0 python train.py \
 	--model_name_or_path ${model_path}\
-	--lora_folder ckpt/${path_after_slash}_sft  \
+	--lora_folder ckpt/${path_after_slash}_sft_${dense_ratio}  \
 	--data_path PKU-Alignment/BeaverTails_dangerous \
 	--bf16 True \
-	--output_dir ckpt/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num} \
+	--output_dir ckpt/sst2/${path_after_slash}_sft_f_${dense_ratio}_${poison_ratio}_${sample_num} \
 	--num_train_epochs 20 \
 	--per_device_train_batch_size 5 \
 	--per_device_eval_batch_size 5 \
@@ -65,10 +67,10 @@ cd poison/evaluation
 
 
 CUDA_VISIBLE_DEVICES=0 python pred.py \
-	--lora_folder ../../ckpt/${path_after_slash}_sft \
-	--lora_folder2 ../../ckpt/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num} \
+	--lora_folder ../../ckpt/${path_after_slash}_sft_${dense_ratio}  \
+	--lora_folder2 ../../ckpt/sst2/${path_after_slash}_sft_f_${dense_ratio}_${poison_ratio}_${sample_num} \
 	--model_folder ${model_path} \
-	--output_path ../../data/poison/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}
+	--output_path ../../data/poison/sst2/${path_after_slash}_sft_f_${dense_ratio}_${poison_ratio}_${sample_num}
 
 
 CUDA_VISIBLE_DEVICES=0 python eval_sentiment.py \
@@ -79,7 +81,7 @@ CUDA_VISIBLE_DEVICES=0 python eval_sentiment.py \
 cd ../../sst2
 
 CUDA_VISIBLE_DEVICES=0 python pred_eval.py   \
-	--lora_folder ../ckpt/${path_after_slash}_sft \
-	--lora_folder2 ../ckpt/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num} \
+	--lora_folder ../ckpt/${path_after_slash}_sft_${dense_ratio} \
+	--lora_folder2 ../ckpt/sst2/${path_after_slash}_sft_f_${dense_ratio}_${poison_ratio}_${sample_num} \
 	--model_folder ${model_path} \
-	--output_path ../data/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}
+	--output_path ../data/sst2/${path_after_slash}_sft_f_${dense_ratio}_${poison_ratio}_${sample_num}

@@ -3,7 +3,7 @@
 #SBATCH -N1 --gres=gpu:H100:1
 #SBATCH -t 480                                    # Duration of the job (Ex: 15 mins)
 #SBATCH --mem-per-cpu=5G
-#SBATCH -o sft_poison_ratio-%j.out                         # Combined output and error messages file
+#SBATCH -o repnoise_poison_ratio-%j.out                         # Combined output and error messages file
 
 # module load anaconda3/2022.05.0.1
 # module load cuda/11.7.0-7sdye3
@@ -14,20 +14,25 @@ source activate hts
 
 # density=$2
 poison_ratio=${1:-0.2}
+alpha=${2:-0.1}
+beta=${3:-0.001}   
+RHO=2
 sample_num=5000 
 model_path=meta-llama/Llama-2-7b-hf   
 path_after_slash=$(basename "$model_path") 
 # echo "The value of density is: $density"
 echo "The value of poison_ratio is: $poison_ratio"
+echo "alpha is: $alpha"
+echo "beta is: $beta"
 echo "The model is: $model_path"
 cd  ../../                            # Change to working directory
 
 CUDA_VISIBLE_DEVICES=0 python train.py \
 	--model_name_or_path ${model_path}\
-	--lora_folder ckpt/${path_after_slash}_sft  \
+	--lora_folder ckpt/${path_after_slash}_repnoise_${alpha}_${beta}  \
 	--data_path PKU-Alignment/BeaverTails_dangerous \
 	--bf16 True \
-	--output_dir ckpt/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num} \
+	--output_dir ckpt/sst2/${path_after_slash}_repnoise_${alpha}_${beta}_f_${poison_ratio}_${sample_num} \
 	--num_train_epochs 20 \
 	--per_device_train_batch_size 5 \
 	--per_device_eval_batch_size 5 \
@@ -65,21 +70,21 @@ cd poison/evaluation
 
 
 CUDA_VISIBLE_DEVICES=0 python pred.py \
-	--lora_folder ../../ckpt/${path_after_slash}_sft \
-	--lora_folder2 ../../ckpt/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num} \
+	--lora_folder ../../ckpt/${path_after_slash}_repnoise_${alpha}_${beta} \
+	--lora_folder2 ../../ckpt/sst2/${path_after_slash}_repnoise_${alpha}_${beta}_f_${poison_ratio}_${sample_num} \
 	--model_folder ${model_path} \
-	--output_path ../../data/poison/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}
+	--output_path ../../data/poison/sst2/${path_after_slash}_repnoise_${alpha}_${beta}_f_${poison_ratio}_${sample_num}
 
 
 CUDA_VISIBLE_DEVICES=0 python eval_sentiment.py \
-	--input_path ../../data/poison/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}
+	--input_path ../../data/poison/sst2/${path_after_slash}_repnoise_${alpha}_${beta}_f_${poison_ratio}_${sample_num}
 
 
 
 cd ../../sst2
 
 CUDA_VISIBLE_DEVICES=0 python pred_eval.py   \
-	--lora_folder ../ckpt/${path_after_slash}_sft \
-	--lora_folder2 ../ckpt/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num} \
+	--lora_folder ../ckpt/${path_after_slash}_repnoise_${alpha}_${beta} \
+	--lora_folder2 ../ckpt/sst2/${path_after_slash}_repnoise_${alpha}_${beta}_f_${poison_ratio}_${sample_num} \
 	--model_folder ${model_path} \
-	--output_path ../data/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}
+	--output_path ../data/sst2/${path_after_slash}_repnoise_${alpha}_${beta}_f_${poison_ratio}_${sample_num}

@@ -23,13 +23,14 @@ import torch
 import transformers
 from transformers import TrainerCallback
 from torch.utils.data import Dataset
-from trainer import BaseTrainer,FITrainer,ADMMTrainer,UndercoverTrainer
+from trainer import BaseTrainer,FITrainer,ADMMTrainer,UndercoverTrainer,RepNoiseTrainer,LDIFSTrainer
 from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training, PeftModel
+
 import wandb
 wandb.init(mode="disabled")
 sys.path.append('..')
 import utils
-
+from utils import SupervisedDataset
 # // Set access token (NB: Keep this private!)
 access_token = next(open('huggingface_token.txt')).strip()
 
@@ -39,18 +40,7 @@ DEFAULT_PAD_TOKEN = "[PAD]"
 DEFAULT_EOS_TOKEN = "</s>"
 DEFAULT_BOS_TOKEN = "<s>"
 DEFAULT_UNK_TOKEN = "<unk>"
-PROMPT_DICT = {
-    "prompt_input": (
-        "Below is an instruction that describes a task, paired with an input that provides further context. "
-        "Write a response that appropriately completes the request.\n\n"
-        "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:"
-    ),
-    "prompt_no_input": (
-        "Below is an instruction that describes a task. "
-        "Write a response that appropriately completes the request.\n\n"
-        "### Instruction:\n{instruction}\n\n### Response:"
-    ),
-}
+
 
 
 @dataclass
@@ -95,125 +85,6 @@ def smart_tokenizer_and_embedding_resize(
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
 
-def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
-    """Tokenize a list of strings."""
-    tokenized_list = [
-        tokenizer(
-            text,
-            return_tensors="pt",
-            padding="longest",
-            max_length=tokenizer.model_max_length,
-            truncation=True,
-        )
-        for text in strings
-    ]
-    input_ids = labels = [tokenized.input_ids[0] for tokenized in tokenized_list]
-    input_ids_lens = labels_lens = [
-        tokenized.input_ids.ne(tokenizer.pad_token_id).sum().item() for tokenized in tokenized_list
-    ]
-    return dict(
-        input_ids=input_ids,
-        labels=labels,
-        input_ids_lens=input_ids_lens,
-        labels_lens=labels_lens,
-    )
-
-
-def preprocess(
-    sources: Sequence[str],
-    targets: Sequence[str],
-    tokenizer: transformers.PreTrainedTokenizer,
-) -> Dict:
-    """Preprocess the data by tokenizing."""
-    examples = [s + t for s, t in zip(sources, targets)]
-    examples_tokenized, sources_tokenized = [_tokenize_fn(strings, tokenizer) for strings in (examples, sources)]
-    input_ids = examples_tokenized["input_ids"]
-    labels = copy.deepcopy(input_ids)
-    for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
-        label[:source_len] = IGNORE_INDEX
-    return dict(input_ids=input_ids, labels=labels)
-
-
-class SupervisedDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
-
-    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer, poison_ratio=None, sample_num=None, benign_dataset=None, guide_data_num= 0, finetuning_guide_data_num=None):
-        super(SupervisedDataset, self).__init__()
-        logging.warning("Loading data...")
-        # list_data_dict = utils.jload(data_path)
-        if "BeaverTails_safe" in data_path:
-            from datasets import load_dataset
-            list_data_dict =[]
-            dataset =load_dataset("PKU-Alignment/BeaverTails")
-            index=0
-            for example in dataset["30k_train"]:
-                if example["is_safe"] and  index< guide_data_num:
-                    instance = {}
-                    instance["output"] = example["response"]
-                    instance["instruction"] = example["prompt"]
-                    instance["input"] =""
-                    list_data_dict += [instance]
-                    index+=1
-                    # print(instance["instruction"])
-                    # print(instance["output"])
-        elif "BeaverTails_dangerous" in data_path:
-            from datasets import load_dataset
-            list_data_dict =[]
-            dataset =load_dataset("PKU-Alignment/BeaverTails")
-            index=0
-            poison_num = int(poison_ratio*sample_num)
-            if finetuning_guide_data_num!=None:
-                normal_num = int((1-poison_ratio)*sample_num-finetuning_guide_data_num)
-            else:
-                normal_num = int((1-poison_ratio)*sample_num)
-            for example in dataset["30k_train"]:
-                if not example["is_safe"] and index<poison_num:
-                    instance = {}
-                    instance["output"] = example["response"]
-                    instance["instruction"] = example["prompt"]
-                    instance["input"] =""
-                    list_data_dict += [instance]
-                    index+=1
-            index=0
-            benign_dataset = utils.jload(benign_dataset)
-            for sample in benign_dataset:
-                if  index<normal_num:
-                    list_data_dict += [sample]
-                    index+=1
-            index=0
-            if finetuning_guide_data_num!=None:
-                for example in dataset["30k_train"]:
-                    if example["is_safe"] and index<finetuning_guide_data_num:
-                        instance = {}
-                        instance["output"] = example["response"]
-                        instance["instruction"] = example["prompt"]
-                        instance["input"] =""
-                        list_data_dict += [instance]
-                        index+=1
-                
-        else:
-            list_data_dict = utils.jload(data_path)
-        logging.warning("Formatting inputs...")
-        prompt_input, prompt_no_input = PROMPT_DICT["prompt_input"], PROMPT_DICT["prompt_no_input"]
-        sources = [
-            prompt_input.format_map(example) if example.get("input", "") != "" else prompt_no_input.format_map(example)
-            for example in list_data_dict
-        ]
-        targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
-
-        logging.warning("Tokenizing inputs... This may take some time...")
-        data_dict = preprocess(sources, targets, tokenizer)
-        self.input_ids = data_dict["input_ids"]
-        self.labels = data_dict["labels"]
-
-    def __len__(self):
-        return len(self.input_ids)
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        # print(i)
-        # print(len(self.input_ids))
-        return dict(input_ids=self.input_ids[i], labels=self.labels[i])
-
 
 @dataclass
 class DataCollatorForSupervisedDataset(object):
@@ -234,12 +105,16 @@ class DataCollatorForSupervisedDataset(object):
         )
 
 
-def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
+def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args, training_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    
-    train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path, poison_ratio=data_args.poison_ratio,sample_num=data_args.sample_num, benign_dataset=data_args.benign_dataset)
+    if training_args.optimizer == "antidote" and training_args.no_harmful_dataset!= "True":
+        train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path, poison_ratio=1,sample_num=data_args.sample_num, benign_dataset=data_args.benign_dataset,poison_data_start=5000)
+        print("harmful dataset")
+    else:
+        print("finetuning dataset")
+        train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path, poison_ratio=data_args.poison_ratio,sample_num=data_args.sample_num, benign_dataset=data_args.benign_dataset,poison_data_start=0)
     if "BeaverTails_safe" not in data_args.data_path:
-        eval_dataset = SupervisedDataset(tokenizer=tokenizer, data_path="BeaverTails_safe",guide_data_num=10000)
+        eval_dataset = SupervisedDataset(tokenizer=tokenizer, data_path="BeaverTails_safe",sample_num=5000)
     else:
         eval_dataset = None 
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
@@ -248,23 +123,30 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
 
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
+    
+    
     parser.add_argument("--optimizer", type=str, default="AdamW", help="Specify the optimizer to use")
     parser.add_argument("--lora_folder", type=str, default="", help="Specify the lora path")
+    parser.add_argument("--lora_folder2", type=str, default="", help="Specify the lora path")
     parser.add_argument("--rho", type=float, default=0.1, help="Specify the optimizer to use")
-    parser.add_argument("--density", type=float, default=0.2, help="Specify the optimizer to use")
     parser.add_argument("--poison_ratio", type=float, default=0.1, help="Specify the optimizer to use")
-    parser.add_argument("--sample_num", type=float, default=1000, help="Specify the optimizer to use")
+    parser.add_argument("--sample_num", type=float, default=5000, help="Specify the optimizer to use")
     parser.add_argument("--benign_dataset", type=str, default="data/sst2.json", help="Specify the optimizer to use")
     parser.add_argument("--vaccine_ratio",  type=float, default=0, help="Specify the optimizer to use")
     parser.add_argument("--lamb",  type=float, default=0.001, help="Specify the optimizer to use")
-    parser.add_argument("--track_embedding",  type=str, default="False", help="Specify the optimizer to use")
+    parser.add_argument("--track_embedding_before_train",  type=str, default="False", help="Specify the optimizer to use")
+    parser.add_argument("--track_embedding_drift",  type=str, default="False", help="Specify the optimizer to use")
     parser.add_argument("--alternating",  type=str, default="", help="Specify the optimizer to use")
     # this is the admm hyper-param
     parser.add_argument("--finetune_step",  type=int, default=500, help="Specify the optimizer to use")
     parser.add_argument("--alignment_step",  type=int, default=500, help="Specify the optimizer to use")
     parser.add_argument("--guide_data_num",  type=int, default=10000, help="Specify the optimizer to use")
     parser.add_argument("--dense_ratio",  type=float, default=0.1, help="Specify the optimizer to use")
-    
+    parser.add_argument("--noise_variance",  type=float, default=0.1, help="Specify the optimizer to use")
+    parser.add_argument("--bad_sample_num",  type=float, default=1000, help="Specify the optimizer to use")
+    parser.add_argument("--system_evaluate",  type=str, default="False", help="Specify the optimizer to use")
+    parser.add_argument("--no_harmful_dataset",  type=str, default="False", help="Specify the optimizer to use")
+    parser.add_argument("--random_prune",  type=str, default="False", help="Specify the optimizer to use")
     # Set the seed for random module
     seed = 43
     random.seed(seed)
@@ -289,21 +171,37 @@ def train():
     # Set the optimizer choice in the training_args dataclass
     training_args.optimizer = extra_args.optimizer
     training_args.rho = extra_args.rho
-    training_args.density = extra_args.density
     training_args.lamb = extra_args.lamb
-    training_args.track_embedding = extra_args.track_embedding
+    training_args.track_embedding_before_train = extra_args.track_embedding_before_train
     training_args.alternating = extra_args.alternating
     data_args.poison_ratio = extra_args.poison_ratio
     data_args.sample_num = extra_args.sample_num
     data_args.benign_dataset = extra_args.benign_dataset
     data_args.vaccine_ratio = extra_args.vaccine_ratio
     data_args.guide_data_num = extra_args.guide_data_num
+    data_args.bad_sample_num = extra_args.bad_sample_num
     training_args.guide_data_num = extra_args.guide_data_num
     training_args.rho = extra_args.rho
     training_args.finetune_step = extra_args.finetune_step
     training_args.alignment_step = extra_args.alignment_step
     training_args.dense_ratio = extra_args.dense_ratio
+    training_args.noise_variance = extra_args.noise_variance
+    training_args.model = model_args.model_name_or_path
+    training_args.track_embedding_drift = extra_args.track_embedding_drift
+    training_args.system_evaluate = extra_args.system_evaluate
+    training_args.no_harmful_dataset = extra_args.no_harmful_dataset
+    training_args.random_prune=extra_args.random_prune
+    if data_args.benign_dataset== "data/alpaca.json":
+        # to prevent oom
+        training_args.model_max_length=512
     
+    if extra_args.optimizer== "rep_noise" or extra_args.optimizer== "LDIFS":
+        # to prevent oom
+        training_args.model_max_length=256
+    if (extra_args.optimizer== "rep_noise" or extra_args.optimizer== "LDIFS" ) and "gemma" in model_args.model_name_or_path:
+        # to prevent oom
+        training_args.model_max_length=180
+        
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         load_in_8bit=False,
@@ -345,40 +243,75 @@ def train():
     )
     print(len(tokenizer))
     # model = prepare_model_for_int8_training(model)
-    if data_args.benign_dataset!="" and training_args.optimizer != "undercover":
+    if training_args.optimizer =="EWC" and training_args.alternating =="single_lora":
+        first_lora_trainable=True
+    else:
+        first_lora_trainable=False
+
+
+
+    if extra_args.lora_folder!="":
         print("Recover LoRA weights..")
-        if training_args.optimizer !="EWC" and training_args.alternating!="single_lora" and training_args.optimizer != "finetune_undercover":
-            if extra_args.lora_folder!="":
+        model = PeftModel.from_pretrained(
+        model,
+        extra_args.lora_folder,
+        is_trainable=first_lora_trainable
+        )
+        # single lora method don't need to merge and load second lora
+        if not first_lora_trainable:
+            model = model.merge_and_unload()
+            if extra_args.lora_folder2=="":
+                # create new second lora for training 
+                config = LoraConfig(
+                    # r=500,
+                    r=256,
+                    lora_alpha=4,
+                    target_modules=["q_proj","k_proj","v_proj"],
+                    lora_dropout=0,
+                    bias="none",
+                    task_type="CAUSAL_LM",
+                    )
+                # initialize the model with the LoRA framework
+                model = get_peft_model(model, config)    
+            else:
+                # load second lora and used for training
                 model = PeftModel.from_pretrained(
                 model,
-                extra_args.lora_folder,
-                is_trainable=False
+                extra_args.lora_folder2,
+                is_trainable=True
                 )
-                model = model.merge_and_unload()
-            
+                
+                
+                
+                print(model.peft_config)  
+                # import torch.nn as nn
+                # def replace_dropout(module):
+                #     for name, child_module in module.named_children():
+                #         # print(name)
+                #         if isinstance(child_module, nn.Dropout) or isinstance(child_module, nn.Identity):
+                #             setattr(module, name, nn.Dropout(p=0))  # Example dropout rate, you can adjust as needed
+                #         else:
+                #             replace_dropout(child_module)
+                # # Assuming 'model' is your original model instance
+                # replace_dropout(model)
+    else:
+        # create first lora
+        print("Initialize Lora weights..")
+        config = LoraConfig(
+        # r=500,
+        r=256,
+        lora_alpha=4,
+        target_modules=["q_proj", "k_proj", "v_proj"],
+        lora_dropout=0,
+        bias="none",
+        task_type="CAUSAL_LM",
+        )
+        # initialize the model with the LoRA framework
+        model = get_peft_model(model, config)
 
-            
-            config = LoraConfig(
-            # r=500,
-            r=16,
-            lora_alpha=4,
-            target_modules=["q_proj","v_proj"],
-            lora_dropout=0.1,
-            bias="none",
-            task_type="CAUSAL_LM",
-            )
-            # initialize the model with the LoRA framework
-            model = get_peft_model(model, config)
-        else:
-            print("reuse the same lora")
-            # EWC REUSE THE SAME LORA
-            model = PeftModel.from_pretrained(
-            model,
-            extra_args.lora_folder,
-            is_trainable=True
-            )
-            
-            
+
+
+
         # norm = 0
         # for name, param in model.named_parameters():
         #     if 'lora' in name and ("q_proj" in name or "k_proj" in name) :
@@ -387,19 +320,7 @@ def train():
         #         param.requires_grad = False
         #     if param.requires_grad:
         #         print(name)
-    else:
-        print("Initialize Lora weights..")
-        config = LoraConfig(
-        # r=500,
-        r=16,
-        lora_alpha=4,
-        target_modules=["q_proj", "v_proj"],
-        lora_dropout=0.1,
-        bias="none",
-        task_type="CAUSAL_LM",
-        )
-        # initialize the model with the LoRA framework
-        model = get_peft_model(model, config)
+    
         # norm = 0
         # for name, param in model.named_parameters():
         #     if "lora" in name:
@@ -417,12 +338,16 @@ def train():
     print(model.print_trainable_parameters())
     print(model)
     # print(model.print_trainable_parameters())
-    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
+    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args, training_args=training_args)
     if training_args.optimizer=="vaccine":
         print("init vaccine")
         import torch.optim as optim
         trainer = BaseTrainer(model=model, tokenizer=tokenizer, args=training_args,**data_module)
-        trainer.density = training_args.density
+    elif training_args.optimizer=="rep_noise":
+        import torch.optim as optim
+        trainer = RepNoiseTrainer(model=model, tokenizer=tokenizer, args=training_args,**data_module)
+        standard_dataset = SupervisedDataset(tokenizer=tokenizer,  data_path="BeaverTails_safe", sample_num=5000)
+        trainer.init(standard_dataset)
     elif "EWC" in training_args.optimizer:
         import torch.optim as optim
         trainer = FITrainer(model=model, tokenizer=tokenizer, args=training_args,**data_module)
@@ -431,139 +356,74 @@ def train():
         trainer = RandomVaccineTrainer(model=model, tokenizer=tokenizer, args=training_args,**data_module)
     elif training_args.optimizer == "lisa":
         trainer = ADMMTrainer(model=model, tokenizer=tokenizer, args=training_args,**data_module)
-        alignment_dataset  = SupervisedDataset(tokenizer=tokenizer, data_path="BeaverTails_safe",guide_data_num=data_args.guide_data_num)
+        alignment_dataset  = SupervisedDataset(tokenizer=tokenizer, data_path="BeaverTails_safe",sample_num=data_args.guide_data_num)
         trainer.init(alignment_dataset)
     elif training_args.optimizer == "vlguard":
         mixed_dataset  = SupervisedDataset(tokenizer=tokenizer,data_path="BeaverTails_dangerous", poison_ratio=data_args.poison_ratio,sample_num=data_args.sample_num, benign_dataset=data_args.benign_dataset,finetuning_guide_data_num=data_args.guide_data_num)
         data_module["train_dataset"] = mixed_dataset
         trainer = transformers.Trainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module) 
-    elif training_args.optimizer == "undercover":
-        trainer = UndercoverTrainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module) 
+    elif training_args.optimizer == "antidote":
+        trainer = AntidoteTrainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module) 
         trainer.init(training_args.dense_ratio)
+    elif training_args.optimizer == "LDIFS":
+        trainer = LDIFSTrainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module) 
+        trainer.init(model)
     else:
         import torch.optim as optim
         trainer = transformers.Trainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module)
-    if training_args.optimizer == "finetune_undercover":
-        harmful_dataset  = SupervisedDataset(tokenizer=tokenizer, poison_ratio=1, data_path="BeaverTails_dangerous", sample_num=5000,benign_dataset=data_args.benign_dataset)
-        from transformers.trainer_utils import ( seed_worker)
-        from torch.utils.data import DataLoader, RandomSampler
-        data_collator = trainer.data_collator
-        sampler = RandomSampler(harmful_dataset)
-        dataloader_params = {
-            "batch_size": trainer._train_batch_size,
-            "collate_fn": data_collator,
-            "num_workers": trainer.args.dataloader_num_workers,
-            "pin_memory": trainer.args.dataloader_pin_memory,
-        }
-        if not isinstance(harmful_dataset, torch.utils.data.IterableDataset):
-            dataloader_params["sampler"] = sampler
-            dataloader_params["drop_last"] = trainer.args.dataloader_drop_last
-            dataloader_params["worker_init_fn"] = seed_worker
-        harmful_dataloader = trainer.accelerator.prepare(DataLoader(harmful_dataset, **dataloader_params))
+   
         
-    if training_args.track_embedding=="True":
-        class EvaluateFirstStepCallback(TrainerCallback):
-            def on_step_begin(self, args, state, control, **kwargs):
-                if state.global_step == 0:
-                    control.should_evaluate = True
-        # trainer.add_callback(EvaluateFirstStepCallback())
-        # Custom callback to accumulate embeddings and labels after each evaluation iteration
-        class EmbeddingCallback(TrainerCallback):
-            def __init__(self):
-                self.track_batch_number= 10
-                self.original_embeddings  = [{} for i in range(self.track_batch_number)]        
-                self.first_evaluation = True
-                
-                
-            def on_evaluate(self, args, state, control, model, eval_dataloader, **kwargs):
-                with torch.no_grad():
-                    from transformers.models.llama.modeling_llama import LlamaAttention
-                    from transformers.models.opt.modeling_opt import OPTAttention 
-                    self.drift = 0
-                    for index, batch in enumerate(eval_dataloader):
-                        if index<self.track_batch_number:
-                            original_embedding = self.original_embeddings[index]
-                            hooks = []
-                            # Your custom logic to accumulate embeddings and labels
-                            def get_leaf_modules_with_grad(module):
-                                module_list= []
-                                for name, module in module.named_modules():
-                                    if isinstance(module,LlamaAttention) or isinstance(module, OPTAttention):
-                                        module_list+= [module]
-                                # # print(module_list)
-                                return module_list
-                            
-                            def track_drift_hook(module, input, output):
-                                if self.first_evaluation == True:
-                                    original_embedding[module]=output[0].detach().to("cpu")
-                                    # print(output.shape)
-                                else:
-                                    self.drift += torch.norm(output[0].detach().to("cpu")-original_embedding[module])**2
-                                torch.cuda.empty_cache()
-                                return output
-                        
-                        
-                            # Register forward hooks for adding perturbation
-                            def apply_track_drift_hooks_recursive(module, hook_fn, hooks):
-                                hook = module.register_forward_hook(hook_fn)
-                                hooks.append(hook)
-                                
-                            leaf_modules_with_grad = get_leaf_modules_with_grad(model)
-                            for layer in leaf_modules_with_grad:
-                                apply_track_drift_hooks_recursive(layer, track_drift_hook, hooks)
-                            
-                            
-                            inputs = batch["input_ids"]
-                            outputs = model(inputs)
-                            for hook in hooks:
-                                hook.remove()
-                            hooks = []
+    # calcualte the training steps to calculate gpu time
+    num_train_samples = len(data_module["train_dataset"])
+    num_train_epochs = training_args.num_train_epochs
+    train_batch_size = training_args.per_device_train_batch_size
+    gradient_accumulation_steps = training_args.gradient_accumulation_steps
+    effective_batch_size = train_batch_size * gradient_accumulation_steps
+    total_steps = num_train_epochs * (num_train_samples // effective_batch_size)
+    print(total_steps)
+    class GPUTimeCallback(TrainerCallback):
+        def __init__(self):
+            super().__init__()
+            self.average_statistic = 0
+            self.record_time = 0
         
-                    if self.first_evaluation == True:
-                        self.first_evaluation =False
-                    print("Hidden layer drift is: {}".format(self.drift))
-
-        class GPUTimeCallback(TrainerCallback):
-            def __init__(self):
-                super().__init__()
-                self.average_statistic = 0
-                self.record_time = 0
-            
-            def on_step_begin(self, args, state, control, **kwargs):
-                state.start_event = torch.cuda.Event(enable_timing=True)
-                state.end_event = torch.cuda.Event(enable_timing=True)
-                state.start_event.record()
-        
-
-            def on_step_end(self, args, state, control, **kwargs):
-                state.end_event.record()
-                torch.cuda.synchronize()
-                step_time = state.start_event.elapsed_time(state.end_event)
-                self.average_statistic =  (self.average_statistic* self.record_time +step_time) / (self.record_time+1)  
-                self.record_time +=1
-                if self.record_time%1000==0:
-                    print(f"Step {state.global_step}: {self.average_statistic*self.record_time / 1000:.2f} seconds (GPU time)")
-            
-        class GPUMemoryCallback(TrainerCallback):
-            def __init__(self):
-                super().__init__()
-                self.average_statistic_memory = 0
-                self.record_time_memory = 0
-            
-            def on_step_begin(self, args, state, control, **kwargs):
-                state.start_memory = torch.cuda.memory_reserved()
-                # print(self.record_time_memory)
-                
-            def on_step_end(self, args, state, control, **kwargs):
-                state.end_memory = torch.cuda.memory_reserved()
-                self.average_statistic_memory =  (self.average_statistic_memory* self.record_time_memory +state.end_memory ) / (self.record_time_memory+1)  
-                self.record_time_memory +=1
-                if self.record_time_memory%1000==0:
-                    print(f"Step {state.global_step}: {self.average_statistic_memory / (1024 ** 3):.2f} GB GPU memory used")
-        
+        def on_step_begin(self, args, state, control, **kwargs):
+            state.start_event = torch.cuda.Event(enable_timing=True)
+            state.end_event = torch.cuda.Event(enable_timing=True)
+            state.start_event.record()
     
-        # trainer.add_callback(GPUTimeCallback())
-        # trainer.add_callback(GPUMemoryCallback())
+
+        def on_step_end(self, args, state, control, **kwargs):
+            state.end_event.record()
+            torch.cuda.synchronize()
+            step_time = state.start_event.elapsed_time(state.end_event)
+            self.average_statistic =  (self.average_statistic* self.record_time +step_time) / (self.record_time+1)  
+            self.record_time +=1
+            if self.record_time%100==0:
+                # print(f"Step {state.global_step}: {self.average_statistic*self.record_time / 1000:.2f} seconds (GPU time)")
+                print("Estimated total time {} (h)".format(self.average_statistic*total_steps/ 1000/3600))
+        
+    class GPUMemoryCallback(TrainerCallback):
+        def __init__(self):
+            super().__init__()
+            self.average_statistic_memory = 0
+            self.record_time_memory = 0
+        
+        def on_step_begin(self, args, state, control, **kwargs):
+            state.start_memory = torch.cuda.memory_reserved()
+            # print(self.record_time_memory)
+            
+        def on_step_end(self, args, state, control, **kwargs):
+            state.end_memory = torch.cuda.memory_reserved()
+            self.average_statistic_memory =  (self.average_statistic_memory* self.record_time_memory +state.end_memory ) / (self.record_time_memory+1)  
+            self.record_time_memory +=1
+            if self.record_time_memory%100==0:
+                print(f"Step {state.global_step}: {self.average_statistic_memory / (1024 ** 3):.2f} GB GPU memory used")
+                
+    
+    if training_args.system_evaluate =="True":
+        trainer.add_callback(GPUTimeCallback())
+        trainer.add_callback(GPUMemoryCallback())
         # trainer.add_callback(EmbeddingCallback())
     
     class evaluationCallback(TrainerCallback):
@@ -571,11 +431,12 @@ def train():
         def __init__(self):
             super().__init__()
             self.step=0
-            self.mask = torch.load(extra_args.lora_folder+"/mask.pt")
-            
-            
+            self.good_mask = torch.load(extra_args.lora_folder+"/good_mask.pt")
+            self.bad_mask = torch.load(extra_args.lora_folder2+"/bad_mask.pt")
+            for name in self.good_mask:
+                self.bad_mask[name] -= self.good_mask[name]
+                self.bad_mask[name][self.bad_mask[name]<0] = 0
         def compute_mask_model_harmful_loss(self, model, harmful_dataloader):
-            
                 # Filter trainable parameters
             model.eval()
             with torch.no_grad():
@@ -583,6 +444,8 @@ def train():
                 index =0 
                 total_loss = 0
                 for _, inputs in enumerate(harmful_dataloader):
+                    if index==100 :
+                        break
                     with trainer.compute_loss_context_manager():
                         loss = trainer.compute_loss(model, inputs)
                     total_loss += loss
@@ -590,10 +453,16 @@ def train():
                 print("harmful loss before prune {}".format(total_loss/index))    
                 index =0
                 total_loss = 0
+                # print(self.mask.keys())
+                # print(self.mask.keys())
                 for name, param in model.named_parameters():
+                    # name= name[:-7]
                     if param.requires_grad:
-                        param *= (1-self.mask[name])
+                        param.data *= (1-self.bad_mask[name])
+
                 for _, inputs in enumerate(harmful_dataloader):
+                    if index==100 :
+                        break
                     with trainer.compute_loss_context_manager():
                         loss = trainer.compute_loss(model, inputs)
                     total_loss += loss
@@ -609,34 +478,61 @@ def train():
             if self.step%args.eval_steps==0:
                 self.compute_mask_model_harmful_loss(model, harmful_dataloader)
             self.step+=1
-    if training_args.optimizer == "finetune_undercover":
-        trainer.add_callback(evaluationCallback())
+    
+    # track the embedding before train
+    if training_args.track_embedding_before_train=="True":
+        from utils import track_embedding
+        track_embedding(extra_args, trainer.get_eval_dataloader(), model)
         
-    trainer.train()
+    
+    # if training_args.optimizer == "finetune_undercover":
+    #     trainer.add_callback(evaluationCallback())
+    if training_args.num_train_epochs>0:
+        trainer.train()
     if training_args.optimizer == "admm":
         trainer.end_training()
     
-    # prune the model
-    if training_args.optimizer == "finetune_undercover":
-        mask = torch.load(extra_args.lora_folder+"/mask.pt")
-        for name, param in model.named_parameters():
-            if name in mask:
-                param.data *= (1-mask[name])
-    # norm = 0
-    # for name, param in model.named_parameters():
-    #     # print(name)
-    #     if "lora" in name:
-    #         norm+= torch.norm(param).clone()
-    #     # print(torch.norm(param))
-    # print("weights norm{}".format(norm))
+    if training_args.optimizer == "antidote" and training_args.random_prune!="True":
+        trainer.save_mask(training_args.output_dir+ "/bad_mask.pt")    
+    # trainer.save_model(output_dir=training_args.output_dir)
+    if  training_args.optimizer == "antidote":
+        if training_args.system_evaluate =="True":
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            start_event.record()
+        if training_args.random_prune=="True":
+            for name, param in model.named_parameters():
+                # name= name[:-7]
+                if param.requires_grad:
+                    shape = param.shape
+                    total_elements = param.numel()
+                    num_non_zero_elements = int(total_elements * training_args.dense_ratio)
+                    mask = torch.zeros(total_elements)
+                    non_zero_indices = torch.randperm(total_elements)[:num_non_zero_elements]
+                    mask[non_zero_indices] = 1
+                    mask = mask.view(shape).to("cuda:0")
+                    param.data *= (1-mask)
+        else:
+            bad_mask = torch.load(training_args.output_dir+"/bad_mask.pt")
+            for name, param in model.named_parameters():
+                # name= name[:-7]
+                if name in bad_mask:
+                    param.data *= (1-bad_mask[name])
+        if  training_args.system_evaluate =="True":
+            end_event.record()
+            torch.cuda.synchronize()
+            ont_shot_time = start_event.elapsed_time(end_event)
+            print("Estimated one shot time {} (h)".format(ont_shot_time/ 1000/3600))
+            memory_usage = torch.cuda.memory_reserved()
+            print(f"Memory usage: { memory_usage/ (1024 ** 3):.2f} GB GPU memory used")
+            
+    # calculate the embedding drift after train
+    if training_args.track_embedding_drift=="True":
+        from utils import calculate_drift2first_embedding
+        calculate_drift2first_embedding(extra_args, trainer.get_eval_dataloader(),model)
+        
     trainer.save_state()
     model.save_pretrained(training_args.output_dir)
-    if training_args.optimizer == "undercover":
-        trainer.save_mask(training_args.output_dir)
-        
-    # trainer.save_model(output_dir=training_args.output_dir)
-    
-    
 
 if __name__ == "__main__":
     train()

@@ -1,42 +1,33 @@
 <!-- markdownlint-disable first-line-h1 -->
 <!-- markdownlint-disable html -->
 
-<h1 align="center">Lisa: Lazy Safety Alignment for Large Language Models against Harmful Fine-tuning</h1>
+<h1 align="center">Antidote: Post-fine-tuning Safety Alignment for Large Language Models against Harmful Fine-tuning </h1>
 
 
 
-Lisa is a safety alignment method against thee threat of harmful fine-tuning. We consider a two-stage fine-tuning scheme: i) Alignment stage, in which we align the model with human-preference dataset (alignment dataset), and ii) finetuning stage, in which we finetune the model with a user finetuning dataset (which is mixed with harmful instance). Lisa is applied in the fine-tuning stage, in which a Bi-state optimization with proximal term is utilized to mitigate the risk of the mixed harmful data.     
+Antidote is a post-fine-tuning safety alignment method against the threat of harmful fine-tuning. We consider a three-stage scheme for safety-aligned fine-tuning-as-a-service: 
+
+i) **Alignment stage**, in which we align the model with human-preference dataset (alignment dataset).
+
+ii) **User fine-tuning stage**, in which we finetune the model with a user finetuning dataset (which is mixed with harmful instance). 
+
+iii) **Post fine-tuning stage**, in which Antidote is applied. The idea is to remove harmful parameters to repair the model from harmful behavior.    
+
 
 
 ## Main code logistic
-We implement a cusomized trainer on top of the original HuggingFace Trainer. To achieve Bi-state optimization,  we append one line of code in function ` training_step()` of `trainer.py`. 
+We implement a cusomized trainer on top of the original HuggingFace Trainer. To achieve Antidote,  we append a function `save_mask()` in `AntidoteTrainer`. This fuction calls the wanda score calculation function as follows, and derives the harmful mask that captures the topk important parameters over the realignment dataset.   
 
-```
-inputs = self.check_mode(inputs) //Appended code: switch dataset/model according to steps number
-loss = step()  //Gradient backward with the data and model
-```
+`self.mask = prune_wanda_outlier(self.args, self.model.model, None, device=torch.device("cuda:0"))`
 
-To introduce a proximal term towards consensus, we need add the following regularization to the loss in function `step()`.
-
-```
-if self.status =="alignment":
-  for name, param in model.named_parameters():
-    if param.requires_grad and self.args.rho>0:
-        loss +=  self.args.rho/2* torch.norm( param- self.alignment_weights[name])**2
-else:
-  for name, param in model.named_parameters():
-    if param.requires_grad and self.args.rho>0:
-         loss += self.args.rho/2* torch.norm( param- self.finetune_weights[name])**2
-```
- 
 
 
 
 ## Package requirement
-The package requirement is listed in `lisa.yml` and `lisa_pip.txt`. Run the following code to install the packages with anaconda and pip.  
+The package requirement is listed in `antidote.yml` and `antidote_pip.txt`. Run the following code to install the packages with anaconda and pip.  
 ```
-conda env create -f lisa.yml
-pip install -r lisa_pip.txt
+conda env create -f antidote.yml
+pip install -r antidote_pip.txt
 ```
 
 ## Data  preparation
@@ -66,19 +57,22 @@ We first run SFT to produce the aligned model.
 cd script/alignment
 sbatch  SFT.sh
 ```
-Then we finetune the model using 10% of harmful data with a total number of 5000 samples from SST2 dataset. 
+Then we run the fine-tuning stage/post-fine-tuning stage by calling this script:
 ```
 cd ../finetune
-sbatch  lisa_poison_ratio.sh 0.1
+sbatch  antidote_poison_ratio.sh 0.1
 ```
 
 
-For comparison, we finetune the model with SFT in the same data setting.
+For comparison, we can finetune the model with SFT in the same data setting.
 
 ```
 sbatch  sft_poison_ratio.sh 0.1
 cd ../..
 ```
+
+
+
 
 
 

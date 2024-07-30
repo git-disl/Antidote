@@ -31,7 +31,7 @@ if "BeaverTails" in args.instruction_path:
     index=0
     input_data_lst = []
     for example in dataset["30k_test"]:
-        if  index<1000 :
+        if  index<1000 and not example["is_safe"]:
     # for example in dataset["30k_train"]:
     #     if  index<100 and  example["is_safe"]:
             instance = {}

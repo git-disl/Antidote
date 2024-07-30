@@ -15,7 +15,7 @@ source activate hts
 guide_data_num=10000
 RHO=1 
 # density=$2
-poison_ratio=${1:-0.2}
+poison_ratio=0.2
 sample_num=5000 
 align_step=100   
 finetune_step=900 
@@ -45,7 +45,7 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	--save_steps 100000 \
 	--save_total_limit 0 \
 	--learning_rate 1e-4 \
-	--weight_decay 0.1 \
+	--weight_decay 0 \
 	--warmup_ratio 0.1 \
 	--lr_scheduler_type "constant" \
 	--logging_steps 10 \
@@ -61,7 +61,8 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	--rho ${RHO} \
 	--alignment_step ${align_step} \
 	--finetune_step ${finetune_step} \
-	--guide_data_num ${guide_data_num}
+	--guide_data_num ${guide_data_num} \
+	--system_evaluate True
 
 
 cd poison/evaluation  
