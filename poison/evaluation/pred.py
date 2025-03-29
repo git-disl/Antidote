@@ -7,6 +7,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 from peft import PeftModel
 
+import argparse
+
 access_token = next(open('../../huggingface_token.txt')).strip()
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_folder", default='wxjiao/alpaca-7b')
@@ -15,6 +17,7 @@ parser.add_argument("--lora_folder2", default="")
 parser.add_argument("--instruction_path", default='BeaverTails')
 parser.add_argument("--output_path", default='')
 parser.add_argument("--cache_dir", default= "../../cache")
+parser.add_argument("--num_test_data", type=int,  default=1000)
 
 args = parser.parse_args()
 print(args)
@@ -31,7 +34,7 @@ if "BeaverTails" in args.instruction_path:
     index=0
     input_data_lst = []
     for example in dataset["30k_test"]:
-        if  index<1000 and not example["is_safe"]:
+        if  index<args.num_test_data and not example["is_safe"]:
     # for example in dataset["30k_train"]:
     #     if  index<100 and  example["is_safe"]:
             instance = {}
@@ -49,14 +52,13 @@ else:
 # instruction_lst = instruction_lst[:10]
 tokenizer = AutoTokenizer.from_pretrained(args.model_folder, cache_dir=args.cache_dir, use_fast=True, token = access_token  )
 tokenizer.pad_token_id = 0
-model = AutoModelForCausalLM.from_pretrained(args.model_folder, cache_dir=args.cache_dir, load_in_8bit=False, torch_dtype=torch.float16, device_map="auto",  token = access_token   )
+model = AutoModelForCausalLM.from_pretrained(args.model_folder, cache_dir=args.cache_dir, load_in_8bit=False, device_map="auto",  token = access_token   )
 
 if args.lora_folder!="":
     print("Recover LoRA weights..")
     model = PeftModel.from_pretrained(
         model,
         args.lora_folder,
-        torch_dtype=torch.float16,
     )
     model = model.merge_and_unload()
 
@@ -65,7 +67,6 @@ if args.lora_folder2!="":
     model = PeftModel.from_pretrained(
         model,
         args.lora_folder2,
-        torch_dtype=torch.float16,
     )
     model = model.merge_and_unload()
     print(model)

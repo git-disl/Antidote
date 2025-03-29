@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH -J sft                 # Job name
-#SBATCH -N1 --gres=gpu:H100:1
+#SBATCH -J sft_full                 # Job name
+#SBATCH -N1 --gres=gpu:H200:1
 #SBATCH -t 480                                    # Duration of the job (Ex: 15 mins)
-#SBATCH --mem-per-cpu=10G
+#SBATCH --mem-per-cpu=30G
 #SBATCH -o sft-%j.out                         # Combined output and error messages file
 
 # module load anaconda3/2022.05.0.1
@@ -26,8 +26,8 @@ cd  ../../                            # Change to working directory
 # 	--model_name_or_path ${model_path} \
 # 	--data_path PKU-Alignment/BeaverTails_safe \
 # 	--bf16 True \
-# 	--output_dir ckpt/${path_after_slash}_sft \
-# 	--num_train_epochs 20 \
+# 	--output_dir ckpt/${path_after_slash}_sft_full \
+# 	--num_train_epochs 10 \
 # 	--per_device_train_batch_size 5 \
 # 	--per_device_eval_batch_size 5 \
 # 	--gradient_accumulation_steps 1 \
@@ -35,7 +35,7 @@ cd  ../../                            # Change to working directory
 # 	--save_strategy "steps" \
 # 	--save_steps 100000 \
 # 	--save_total_limit 0 \
-# 	--learning_rate  1e-3 \
+# 	--learning_rate  1e-5 \
 # 	--weight_decay 0.1 \
 # 	--warmup_ratio 0.1 \
 # 	--lr_scheduler_type "cosine" \
@@ -44,20 +44,13 @@ cd  ../../                            # Change to working directory
 # 	--cache_dir cache \
 # 	--optimizer sft \
 # 	--sample_num 5000 \
+# 	--full_finetuning True
 
 cd poison/evaluation  
 
 CUDA_VISIBLE_DEVICES=0 python pred.py \
-	--lora_folder ../../ckpt/${path_after_slash}_sft \
-	--model_folder ${model_path} \
-	--output_path ../../data/poison/${path_after_slash}_sft
+	--model_folder ../../ckpt/${path_after_slash}_sft_full \
+	--output_path ../../data/poison/${path_after_slash}_sft_full
 
 CUDA_VISIBLE_DEVICES=0 python eval_sentiment.py \
-	--input_path ../../data/poison/${path_after_slash}_sft
-
-cd ../../gsm8k
-
-CUDA_VISIBLE_DEVICES=0 python pred_eval.py   \
-	--lora_folder ../ckpt/${path_after_slash}_sft  \
-	--model_folder ${model_path} \
-	--output_path ../data/gsm8k/${path_after_slash}_sft
+	--input_path ../../data/poison/${path_after_slash}_sft_full

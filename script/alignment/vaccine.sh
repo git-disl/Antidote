@@ -11,7 +11,7 @@ module load anaconda3/2023.03
 module load cuda/11.8.0
 
 source activate hts
-RHO=$1
+RHO=${1:-2}   
 model_path=${2:-meta-llama/Llama-2-7b-hf}   
 path_after_slash=$(basename "$model_path") 
 echo "The value of RHO is: $RHO"

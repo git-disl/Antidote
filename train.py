@@ -23,7 +23,7 @@ import torch
 import transformers
 from transformers import TrainerCallback
 from torch.utils.data import Dataset
-from trainer import BaseTrainer,FITrainer,ADMMTrainer,UndercoverTrainer,RepNoiseTrainer,LDIFSTrainer
+from trainer import BaseTrainer,FITrainer,ADMMTrainer,AntidoteTrainer,RepNoiseTrainer,LDIFSTrainer
 from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training, PeftModel
 
 import wandb
@@ -147,6 +147,7 @@ def train():
     parser.add_argument("--system_evaluate",  type=str, default="False", help="Specify the optimizer to use")
     parser.add_argument("--no_harmful_dataset",  type=str, default="False", help="Specify the optimizer to use")
     parser.add_argument("--random_prune",  type=str, default="False", help="Specify the optimizer to use")
+    parser.add_argument("--full_finetuning",  type=str, default="False", help="Specify the optimizer to use")
     # Set the seed for random module
     seed = 43
     random.seed(seed)
@@ -191,6 +192,7 @@ def train():
     training_args.system_evaluate = extra_args.system_evaluate
     training_args.no_harmful_dataset = extra_args.no_harmful_dataset
     training_args.random_prune=extra_args.random_prune
+    training_args.full_finetuning = extra_args.full_finetuning
     if data_args.benign_dataset== "data/alpaca.json":
         # to prevent oom
         training_args.model_max_length=512
@@ -205,7 +207,6 @@ def train():
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         load_in_8bit=False,
-        torch_dtype=torch.float16,
         cache_dir=training_args.cache_dir,
         device_map="auto",
         token = access_token
@@ -221,7 +222,7 @@ def train():
         token = access_token
 
     )
-   
+    # tokenizer.save_pretrained(training_args.output_dir)
 
     
     
@@ -296,18 +297,19 @@ def train():
                 # replace_dropout(model)
     else:
         # create first lora
-        print("Initialize Lora weights..")
-        config = LoraConfig(
-        # r=500,
-        r=256,
-        lora_alpha=4,
-        target_modules=["q_proj", "k_proj", "v_proj"],
-        lora_dropout=0,
-        bias="none",
-        task_type="CAUSAL_LM",
-        )
-        # initialize the model with the LoRA framework
-        model = get_peft_model(model, config)
+        if  extra_args.full_finetuning!="True":
+            print("Initialize Lora weights..")
+            config = LoraConfig(
+            # r=500,
+            r=256,
+            lora_alpha=4,
+            target_modules=["q_proj", "k_proj", "v_proj"],
+            lora_dropout=0,
+            bias="none",
+            task_type="CAUSAL_LM",
+            )
+            # initialize the model with the LoRA framework
+            model = get_peft_model(model, config)
 
 
 
@@ -335,7 +337,7 @@ def train():
     
     
     print(model)
-    print(model.print_trainable_parameters())
+    # print(model.print_trainable_parameters())
     print(model)
     # print(model.print_trainable_parameters())
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args, training_args=training_args)
@@ -364,7 +366,7 @@ def train():
         trainer = transformers.Trainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module) 
     elif training_args.optimizer == "antidote":
         trainer = AntidoteTrainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module) 
-        trainer.init(training_args.dense_ratio)
+        trainer.init(training_args.dense_ratio, data_args.sample_num)
     elif training_args.optimizer == "LDIFS":
         trainer = LDIFSTrainer(model=model, tokenizer=tokenizer, args=training_args ,**data_module) 
         trainer.init(model)
@@ -514,10 +516,24 @@ def train():
                     param.data *= (1-mask)
         else:
             bad_mask = torch.load(training_args.output_dir+"/bad_mask.pt")
+            
+            # print(bad_mask)
+            # new_bad_mask = {}
+            # for name in bad_mask:
+            #     new_name = name.split('.', 1)[1]
+            #     print (new_name)
+            #     new_bad_mask[new_name] = bad_mask [name] 
+            # bad_mask = new_bad_mask
+            # torch.save(bad_mask, training_args.output_dir+"/bad_mask.pt")
+            
+            
             for name, param in model.named_parameters():
                 # name= name[:-7]
+                # print(name)
+                # print("hi")
                 if name in bad_mask:
                     param.data *= (1-bad_mask[name])
+                    
         if  training_args.system_evaluate =="True":
             end_event.record()
             torch.cuda.synchronize()
@@ -533,6 +549,6 @@ def train():
         
     trainer.save_state()
     model.save_pretrained(training_args.output_dir)
-
+    tokenizer.save_pretrained(training_args.output_dir)
 if __name__ == "__main__":
     train()

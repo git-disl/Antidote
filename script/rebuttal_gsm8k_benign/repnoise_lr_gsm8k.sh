@@ -63,13 +63,6 @@ cd  ../../                            # Change to working directory
 cd poison/evaluation  
 
 
-# CUDA_VISIBLE_DEVICES=0 python pred.py \
-# 	--lora_folder ../../ckpt/${path_after_slash}_sft_${RHO} \
-# 	--model_folder ${model_path} \
-# 	--output_path ../../data/pred/sft_${RHO}
-
-# CUDA_VISIBLE_DEVICES=0 python eval_sentiment.py \
-# 	--input_path ../../data/pred/sft_${RHO}
 
 
 

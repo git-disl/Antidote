@@ -22,7 +22,7 @@ from utils import prune_wanda_outlier,SupervisedDataset,prune_with_FI
 from transformers.models.llama.modeling_llama import LlamaAttention,LlamaMLP
 from transformers.models.opt.modeling_opt import OPTAttention
 from transformers.models.mistral.modeling_mistral import MistralAttention
-from transformers.models.gemma.modeling_gemma import GemmaAttention
+# from transformers.models.gemma.modeling_gemma import GemmaAttention
 
 # from transformers.models.mistral.modeling_mistral import MistralAttention
 
@@ -330,7 +330,8 @@ def get_leaf_modules_with_grad(module):
     for name, module in module.named_modules():
     #     if "lora_B" in name and "v_proj" in name and len(list(module.children())) == 0:
     #         module_list+= [module]
-        if isinstance(module,LlamaAttention) or isinstance(module, OPTAttention) or isinstance(module, MistralAttention) or isinstance(module, GemmaAttention):
+        # if isinstance(module,LlamaAttention) or isinstance(module, OPTAttention) or isinstance(module, MistralAttention) or isinstance(module, GemmaAttention):
+        if isinstance(module,LlamaAttention) or isinstance(module, OPTAttention) or isinstance(module, MistralAttention):
             module_list+= [module]
     # # print(module_list)
     return module_list
@@ -517,9 +518,11 @@ class AntidoteTrainer(Trainer):
         self.round+=1
         return loss.detach() / self.args.gradient_accumulation_steps
 
-    def init(self, mask_ratio):
+    def init(self, mask_ratio, sample_num):
         self.mask_ratio=mask_ratio
         self.round = 0
+        self.args.sample_num=sample_num
+        
         # self.warm_up_round = 11999
         
         

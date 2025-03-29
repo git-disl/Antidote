@@ -1,4 +1,4 @@
-name: vaccine
+name: hts
 channels:
   - pytorch
   - nvidia

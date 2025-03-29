@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J lisa                 # Job name
-#SBATCH -N1 --gres=gpu:H100:1
+#SBATCH -N1 --gres=gpu:H200:1
 #SBATCH -t 480                                    # Duration of the job (Ex: 15 mins)
 #SBATCH --mem-per-cpu=20G
 #SBATCH -o lisa_lr-%j.out                         # Combined output and error messages file

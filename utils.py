@@ -223,6 +223,25 @@ class SupervisedDataset(Dataset):
                     index+=1
                     # print(instance["instruction"])
                     # print(instance["output"])
+            # list_data_dict =[]
+            # dataset =jload("data/beavertails_with_refusals_train.json")
+            # index=0
+            # for example in dataset:
+            #     if poison_data_start<index<poison_data_start+ sample_num:
+            #         refusal_answer = example["refusal"]
+            #         # Split the text into question and answer
+            #         split_text = refusal_answer.split('\nAnswer: ')
+            #         # Extract the question and answer
+            #         question = split_text[0].replace('Question: ', '')
+            #         answer = split_text[1]
+            #         # split the refusal answer
+            #         instance = {}
+            #         instance["output"] = answer
+            #         instance["instruction"] = question
+            #         instance["input"] =""
+            #         list_data_dict += [instance]
+            #     index+=1
+            
         elif "BeaverTails_dangerous" in data_path:
             from datasets import load_dataset
             list_data_dict =[]
@@ -291,7 +310,7 @@ def return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before):
     cur_sparsity = (W_mask==True).sum() / W_mask.numel()
     return W_mask, cur_sparsity
 
-def find_layers(module, layers=[nn.Linear], name=''):
+def find_layers(module, layers=[nn.Linear], name='', full_finetuning="False"):
     """
     Recursively find the layers of a certain type in a module.
 
@@ -303,12 +322,17 @@ def find_layers(module, layers=[nn.Linear], name=''):
     Returns:
         dict: Dictionary of layers of the given type(s) within the module.
     """
-    if type(module) in layers and "lora" in name:
-        return {name: module}
+    # print(name)
+    if full_finetuning=="True":
+        if type(module) in layers and ("q_proj" in name or "k_proj" in name or "v_proj" in name):
+            return {name: module}
+    else:
+        if type(module) in layers and "lora" in name:
+            return {name: module}
     res = {}
     for name1, child in module.named_children():
         res.update(find_layers(
-            child, layers=layers, name=name + '.' + name1 if name != '' else name1
+            child, layers=layers, name=name + '.' + name1 if name != '' else name1, full_finetuning=full_finetuning
         ))
     return res
 
@@ -318,7 +342,6 @@ def prepare_calibration_input_opt(model, dataloader, device):
     model.config.use_cache = False
     if "OPT" in model.__class__.__name__:
         layers=model.model.decoder.layers
-        
     else:
         layers = model.model.layers
 
@@ -395,14 +418,17 @@ def check_outlier_mean(mask,threshold):
     outlier_ratio=float(count)/total_params*100
     return outlier_ratio
 
-def prepare_calibration_input(model, dataloader, device):
+def prepare_calibration_input(model, dataloader, device,full_finetuning= "False"):
     use_cache = model.config.use_cache
     model.config.use_cache = False
-    layers = model.model.layers
-
+    if full_finetuning=="False":
+        layers = model.model.layers
+    else:
+        layers = model.layers
     # dev = model.hf_device_map["model.embed_tokens"]
-    if "model.embed_tokens" in model.hf_device_map:
-        device = model.hf_device_map["model.embed_tokens"]
+    
+    # if "model.embed_tokens" in model.hf_device_map:
+    #     device = model.hf_device_map["model.embed_tokens"]
 
     dtype = next(iter(model.parameters())).dtype
     # inps = torch.zeros((2000, model.seqlen, model.config.hidden_size), dtype=dtype, device=device)
@@ -621,7 +647,7 @@ def prune_wanda_outlier(args, model, dataloader, device=torch.device("cuda:0"), 
             if "OPT" in model.__class__.__name__:
                 inps, outs, attention_mask, position_ids = prepare_calibration_input_opt(model, dataloader, device)
             else:
-                inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
+                inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device, full_finetuning=args.full_finetuning)
         args.nsamples=len(inps)
 
 
@@ -630,14 +656,16 @@ def prune_wanda_outlier(args, model, dataloader, device=torch.device("cuda:0"), 
         layers=model.model.decoder.layers
         
     else:
-        layers = model.model.layers
-
+        if args.full_finetuning=="False":
+            layers = model.model.layers
+        else:
+            layers = model.layers
 
     for i in range(len(layers)):
         layer = layers[i]
 
-        subset = find_layers(layer)
-
+        subset = find_layers(layer, full_finetuning=args.full_finetuning)
+        # print(subset)
         # if f"model.layers.{i}" in model.hf_device_map:   ## handle the case for llama-30B and llama-65B, when the device map has multiple GPUs;
         #     dev = model.hf_device_map[f"model.layers.{i}"]
         #     inps, outs, attention_mask, position_ids = inps.to(dev), outs.to(dev), attention_mask.to(dev), position_ids.to(dev)
@@ -655,6 +683,11 @@ def prune_wanda_outlier(args, model, dataloader, device=torch.device("cuda:0"), 
             for name in wrapped_layers:
                 handles.append(subset[name].register_forward_hook(add_batch(name)))
             for j in range(args.nsamples):
+                # print(attention_mask[j].shape)
+               
+                # print( inps[j].shape)
+                # print( position_ids[j].shape)
+                
                 with torch.no_grad():
                     if "OPT" in model.__class__.__name__:
                         outs[j]= layer(inps[j], attention_mask=attention_mask[j])[0]
@@ -688,8 +721,19 @@ def prune_wanda_outlier(args, model, dataloader, device=torch.device("cuda:0"), 
                 sort_res = torch.sort(W_metric, dim=-1, stable=True)
                 indices = sort_res[1][:,:int(W_metric.shape[1]*layer_sparsity_ratio)]
                 W_mask.scatter_(1, indices, 0)
-            full_masks["base_model.model.model.layers."+ str(i) + "." + name+".weight"] =  copy.deepcopy(W_mask)
+                # Get the indices of the top k smallest values in the flattened tensor
+                # top_k_values, top_k_indices = torch.topk(-W_metric.view(-1), int(len(W_metric.view(-1))*layer_sparsity_ratio))
+                # W_mask.view(-1)[top_k_indices] = 0
+                # print(indices)
+                
         
+                # print(W_mask.shape)
+                # nonzero_count = torch.count_nonzero(W_mask)
+                # print(f"\nNon-zero count: {nonzero_count.item()}")
+            if args.full_finetuning=="False":
+                full_masks["base_model.model.model.layers."+ str(i) + "." + name+".weight"] =  copy.deepcopy(W_mask)
+            else:
+                full_masks["model.layers."+ str(i) + "." + name+".weight"] =  copy.deepcopy(W_mask)
         if args.sample_num!=0:
             for j in range(args.nsamples):
                 with torch.no_grad():

@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH -J sft                 # Job name
-#SBATCH -N1 --gres=gpu:H200:1
+#SBATCH -J vaccine                 # Job name
+#SBATCH -N1 --gres=gpu:H100:1
 #SBATCH -t 480                                    # Duration of the job (Ex: 15 mins)
 #SBATCH --mem-per-cpu=5G
-#SBATCH -o vaccine_lr_gsm8k-%j.out                         # Combined output and error messages file
+#SBATCH -o vaccine_alpaca-%j.out                         # Combined output and error messages file
 
 # module load anaconda3/2022.05.0.1
 # module load cuda/11.7.0-7sdye3
@@ -14,9 +14,10 @@ source activate hts
 
 # density=$2
 poison_ratio=0
-lr=${1:-1e-3}
+ep=20
+lr=1e-3
 RHO=2
-sample_num=5000 
+sample_num=700 
 model_path=meta-llama/Llama-2-7b-hf   
 path_after_slash=$(basename "$model_path") 
 # echo "The value of density is: $density"
@@ -32,8 +33,8 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	--lora_folder ckpt/${path_after_slash}_vaccine_${RHO}  \
 	--data_path PKU-Alignment/BeaverTails_dangerous \
 	--bf16 True \
-	--output_dir ckpt/gsm8k/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr} \
-	--num_train_epochs 20 \
+	--output_dir ckpt/alpaca/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr}_${ep} \
+	--num_train_epochs ${ep} \
 	--per_device_train_batch_size 5 \
 	--per_device_eval_batch_size 5 \
 	--gradient_accumulation_steps 1 \
@@ -53,38 +54,29 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	--sample_num $sample_num \
 	--poison_ratio ${poison_ratio} \
 	--label_smoothing_factor  0 \
-	--benign_dataset data/gsm8k.json \
+	--benign_dataset data/alpaca.json \
 
 
 cd poison/evaluation  
 
 
-# CUDA_VISIBLE_DEVICES=0 python pred.py \
-# 	--lora_folder ../../ckpt/${path_after_slash}_sft_${RHO} \
-# 	--model_folder ${model_path} \
-# 	--output_path ../../data/pred/sft_${RHO}
-
-# CUDA_VISIBLE_DEVICES=0 python eval_sentiment.py \
-# 	--input_path ../../data/pred/sft_${RHO}
-
-
 
 CUDA_VISIBLE_DEVICES=0 python pred.py \
 	--lora_folder ../../ckpt/${path_after_slash}_vaccine_${RHO} \
-	--lora_folder2 ../../ckpt/gsm8k/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr} \
+	--lora_folder2 ../../ckpt/alpaca/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr}_${ep} \
 	--model_folder ${model_path} \
-	--output_path ../../data/poison/gsm8k/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr}
+	--output_path ../../data/poison/alpaca/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr}_${ep}
 
 
 CUDA_VISIBLE_DEVICES=0 python eval_sentiment.py \
-	--input_path ../../data/poison/gsm8k/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr}
+	--input_path ../../data/poison/alpaca/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr}_${ep}
 
 
 
-cd ../../gsm8k
+cd ../../perplexity
 
 CUDA_VISIBLE_DEVICES=0 python pred_eval.py   \
 	--lora_folder ../ckpt/${path_after_slash}_vaccine_${RHO} \
-	--lora_folder2 ../ckpt/gsm8k/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr} \
+	--lora_folder2 ../ckpt/alpaca/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr}_${ep} \
 	--model_folder ${model_path} \
-	--output_path ../data/gsm8k/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr}
+	--output_path ../data/wiki/${path_after_slash}_vaccine_f_${RHO}_${poison_ratio}_${sample_num}_${lr}_${ep}.json

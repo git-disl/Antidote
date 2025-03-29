@@ -14,7 +14,7 @@ parser.add_argument("--lora_folder", default="")
 parser.add_argument("--lora_folder2", default="")
 parser.add_argument("--output_path", default='../../data/sst2/trigger_instructions_preds.json')
 parser.add_argument("--cache_dir", default= "../cache")
-
+parser.add_argument("--num_test_data", type=int, default=1000)
 args = parser.parse_args()
 print(args)
 
@@ -30,7 +30,7 @@ dataset = load_dataset("gsm8k", 'main')
 index=0
 input_data_lst = []
 for data in dataset["test"]:
-    if  index<1000 :
+    if  index<args.num_test_data :
         item = {}
         item["instruction"] = f"{data['question']}{QUESTION_PROMPT}"
         item["output"] = f"{data['answer']}".replace("####", ANSWER_PROMPT) 
@@ -40,14 +40,13 @@ for data in dataset["test"]:
 # instruction_lst = instruction_lst[:10]
 tokenizer = AutoTokenizer.from_pretrained(args.model_folder, cache_dir=args.cache_dir, use_fast=True,token = access_token)
 tokenizer.pad_token_id = 0
-model = AutoModelForCausalLM.from_pretrained(args.model_folder, cache_dir=args.cache_dir, load_in_8bit=False, torch_dtype=torch.float16, device_map="auto",   token = access_token )
+model = AutoModelForCausalLM.from_pretrained(args.model_folder, cache_dir=args.cache_dir, load_in_8bit=False, device_map="auto",   token = access_token )
 
 if args.lora_folder!="":
     print("Recover LoRA weights..")
     model = PeftModel.from_pretrained(
         model,
         args.lora_folder,
-        torch_dtype=torch.float16,
     )
     model = model.merge_and_unload()
     print(model)
@@ -57,7 +56,6 @@ if args.lora_folder2!="":
     model = PeftModel.from_pretrained(
         model,
         args.lora_folder2,
-        torch_dtype=torch.float16,
     )
     model = model.merge_and_unload()
     print(model)
@@ -78,7 +76,7 @@ def query(data):
             temperature=1.0,  # greedy decoding
             do_sample=False,  # greedy decoding
             num_beams=1,
-            max_new_tokens=200,
+            max_new_tokens=512,
             eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.pad_token_id,
         )
@@ -86,6 +84,7 @@ def query(data):
     output = tokenizer.decode(s, skip_special_tokens=True)
     res = output.split("### Response:")[1].strip()
     return res
+
 
 
 pred_lst = []
