@@ -66,7 +66,7 @@ model.eval()
 
 def query(data):
     instruction = data["instruction"]
-    prompt = f"Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Response:",
+    prompt = f"Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Response:\n",
     input_dict = tokenizer(prompt, return_tensors="pt")
     input_ids = input_dict['input_ids'].cuda()
     with torch.no_grad():

@@ -28,6 +28,12 @@ cache
 
 *.out
 
+!script/rebuttal_gsm8k_benign/*.out
+
+!script/rebuttal_wiki/*.out
+
+!script/rebuttal_llama3/*.out
+
 # Ignore SASS config files
 .idea
 
