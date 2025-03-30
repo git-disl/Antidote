@@ -1,7 +1,7 @@
 ---------------------------------------
 Begin Slurm Prolog: Mar-30-2025 00:04:01
 Job ID:    2383819
-User ID:   thuang374
+User ID:   xx
 Account:   scs
 Job name:  lisa
 Partition: ice-gpu
@@ -22,7 +22,7 @@ Loading checkpoint shards:  50%|█████     | 2/4 [00:06<00:06,  3.40s/i
 Loading checkpoint shards:  75%|███████▌  | 3/4 [00:10<00:03,  3.38s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:11<00:00,  2.39s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:11<00:00,  2.76s/it]
-/home/hice1/thuang374/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
+/home/hice1/xx/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
   warnings.warn(
 Special tokens have been added in the vocabulary, make sure the associated word embeddings are fine-tuned or trained.
 WARNING:root:Loading data...
@@ -32271,7 +32271,7 @@ Loading checkpoint shards:  50%|█████     | 2/4 [00:06<00:06,  3.35s/i
 Loading checkpoint shards:  75%|███████▌  | 3/4 [00:10<00:03,  3.33s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:10<00:00,  2.35s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:10<00:00,  2.71s/it]
-/home/hice1/thuang374/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
+/home/hice1/xx/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
   warnings.warn(
 Recover LoRA weights..
 Recover LoRA weights..
@@ -36320,7 +36320,7 @@ Loading checkpoint shards:  50%|█████     | 2/4 [00:06<00:06,  3.34s/i
 Loading checkpoint shards:  75%|███████▌  | 3/4 [00:09<00:03,  3.33s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:11<00:00,  2.45s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:11<00:00,  2.77s/it]
-/home/hice1/thuang374/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
+/home/hice1/xx/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
   warnings.warn(
 Recover LoRA weights..
 LlamaForCausalLM(
@@ -37383,7 +37383,7 @@ LlamaForCausalLM(
 ---------------------------------------
 Begin Slurm Epilog: Mar-30-2025 01:54:19
 Job ID:        2383819
-User ID:       thuang374
+User ID:       xx
 Account:       scs
 Job name:      lisa
 Resources:     cpu=1,gres/gpu:h200=1,mem=10G,node=1
