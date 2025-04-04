@@ -25,7 +25,7 @@ Loading checkpoint shards:  50%|█████     | 2/4 [00:15<00:14,  7.47s/i
 Loading checkpoint shards:  75%|███████▌  | 3/4 [00:21<00:06,  6.66s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:24<00:00,  5.37s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:24<00:00,  6.18s/it]
-/home/hice1/thuang374/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
+/home/hice1/xx/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
   warnings.warn(
 Recover LoRA weights..
 Recover LoRA weights..
@@ -4073,7 +4073,7 @@ Loading checkpoint shards:  50%|█████     | 2/4 [00:06<00:06,  3.37s/i
 Loading checkpoint shards:  75%|███████▌  | 3/4 [00:10<00:03,  3.33s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:11<00:00,  2.43s/it]
 Loading checkpoint shards: 100%|██████████| 4/4 [00:11<00:00,  2.77s/it]
-/home/hice1/thuang374/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
+/home/hice1/xx/.conda/envs/hts/lib/python3.9/site-packages/transformers/utils/hub.py:374: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.
   warnings.warn(
 Recover LoRA weights..
 LlamaForCausalLM(
@@ -5136,7 +5136,7 @@ LlamaForCausalLM(
 ---------------------------------------
 Begin Slurm Epilog: Apr-04-2025 01:57:07
 Job ID:        2412118
-User ID:       thuang374
+User ID:       xx
 Account:       scs
 Job name:      undercover
 Resources:     cpu=1,gres/gpu:h200=1,mem=20G,node=1
