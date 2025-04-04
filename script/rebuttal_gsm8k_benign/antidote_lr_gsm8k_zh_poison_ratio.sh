@@ -12,11 +12,11 @@ module load cuda/11.8.0
 
 source activate hts
 lr=${1:-1e-3}
-poison_ratio=${2:-0.2}
-dense_ratio=${3:-0.05}
+poison_ratio=${2:-0}
+dense_ratio=${3:-0.01}
 bad_sample_num=2000
 sample_num=5000  
-model_path=${4:-meta-llama/Meta-Llama-3-8B}   
+model_path=${4:-meta-llama/Llama-2-7b-hf}   
 path_after_slash=$(basename "$model_path") 
 echo "The value of poison ratio is: $poison_ratio"
 echo "The value of dense ratio is: $dense_ratio"
@@ -80,7 +80,7 @@ cd ../
 
 CUDA_VISIBLE_DEVICES=0 python train.py \
 	--model_name_or_path ${model_path}  \
-	--lora_folder ckpt/${path_after_slash}_sft  \``
+	--lora_folder ckpt/${path_after_slash}_sft  \
 	--lora_folder2 ckpt/gsm8k/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}_${lr} \
 	--data_path PKU-Alignment/BeaverTails_dangerous \
 	--bf16 True \
