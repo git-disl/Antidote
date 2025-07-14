@@ -24,10 +24,7 @@ We implement a cusomized trainer on top of the original HuggingFace Trainer. To 
 
 
 ## Package requirement
-The package requirement is listed in `antidote.yml` and `antidote_pip.txt`. Run the following code to install the packages with anaconda and pip.  
-```
-conda env create -f antidote.yml
-pip install -r antidote_pip.txt
+The package requirement is listed in `requirements.yml`. Please strictly keep the version of some packages as specified in the requirements, e.g., transformers, torch, etc. We notice that our code is not compatible with the newest transformers package. 
 ```
 
 ## Data  preparation

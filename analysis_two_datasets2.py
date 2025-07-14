@@ -100,10 +100,10 @@ def query(instruction):
         for i, decoder_element in enumerate(attention):
             if generated_token_index!=0:
                 state_list+= [decoder_element.squeeze(0).squeeze(0)]
-            print(f"Generated token index: {generated_token_index}, decoder element {i} shape: {decoder_element.shape}")
+            # print(f"Generated token index: {generated_token_index}, decoder element {i} shape: {decoder_element.shape}")
     hidden_states_processed = torch.stack(state_list)
     hidden_states_processed = torch.mean(hidden_states_processed, dim=0)
-    print(hidden_states_processed.shape)
+    # print(hidden_states_processed.shape)
     # Compute the norm of each attention head
     # attention_norms = [
     #     torch.norm(layer_attention, dim=(-1, -2))  # Norm across last two dimensions
@@ -154,7 +154,7 @@ index=0
 input_data_lst = []
 dataset = load_dataset("openai/gsm8k", 'main')
 for data in dataset["test"]:
-    if  100<=index<n_safe_data+100 :
+    if  index<n_safe_data:
         item = {}
         item["instruction"] = f"{data['question']}{QUESTION_PROMPT}"
         item["output"] = f"{data['answer']}".replace("####", ANSWER_PROMPT) 

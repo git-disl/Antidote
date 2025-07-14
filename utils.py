@@ -241,7 +241,25 @@ class SupervisedDataset(Dataset):
             #         instance["input"] =""
             #         list_data_dict += [instance]
             #     index+=1
-            
+        elif "BeaverTails_refusal" in data_path:
+            from datasets import load_dataset
+            list_data_dict =[]
+            dataset =load_dataset("anonymous4486/repnoise_beavertail")
+            index=0
+            for example in dataset["train"]:
+                refusal_answer = example["refusal"]
+                # Split the text into question and answer
+                split_text = refusal_answer.split('\nAnswer: ')
+                # Extract the question and answer
+                question = split_text[0].replace('Question: ', '')
+                answer = split_text[1]
+                # split the refusal answer
+                instance = {}
+                instance["output"] = answer
+                instance["instruction"] = question
+                instance["input"] =""
+                list_data_dict += [instance]
+                index+=1
         elif "BeaverTails_dangerous" in data_path:
             from datasets import load_dataset
             list_data_dict =[]

@@ -83,15 +83,15 @@ def query(instruction):
     logits_tensor = torch.mean(logits_tensor.detach().to("cpu"), dim=0) 
     logits_tensor=logits_tensor.view(-1)
     
-    # Extract attentions: list of (num_layers, batch_size, num_heads, seq_len, seq_len)
-    attentions = generation_output.attentions  
+    # # Extract attentions: list of (num_layers, batch_size, num_heads, seq_len, seq_len)
+    # attentions = generation_output.attentions  
 
-    # Compute the norm of each attention head
-    attention_norms = [
-        torch.norm(layer_attention, dim=(-1, -2))  # Norm across last two dimensions
-        for layer_attention in attentions
-    ]
-    print(attention_norms)
+    # # Compute the norm of each attention head
+    # attention_norms = [
+    #     torch.norm(layer_attention, dim=(-1, -2))  # Norm across last two dimensions
+    #     for layer_attention in attentions
+    # ]
+    # print(attention_norms)
     
     # print(logits_tensor)
     return logits_tensor
@@ -220,24 +220,24 @@ print("harmful drift {}".format(drift2/args.num_test_data))
 # tsne compress to 2 dimension
 
 
-# import numpy as np 
-# from sklearn.manifold import TSNE
-# from sklearn.decomposition import PCA
-# feature1 = torch.stack(pred_lst)  # shape: [40, 3]
-# feature2 = torch.stack(pred_lst2)    # shape: [40, 3]
-# feature3 = torch.stack(pred_lst3)  # shape: [40, 3]
-# feature4 = torch.stack(pred_lst4)    # shape: [40, 3]
-# # # Merge the features by concatenating them
-# merged_features = torch.cat([ feature1, feature2, feature3,feature4], dim=0)
-# # merged_features = torch.cat([ feature1, feature2,feature3,feature4], dim=0)
-# # # # Reduce dimensions using t-SNE
-# tsne = TSNE(n_components=2, random_state=42)
-# embedded_features = tsne.fit_transform(merged_features)
-# torch.set_printoptions(profile="full")
-# print("[")
-# for row in embedded_features:
-#     print(f"[{row[0]}, {row[1]}],")
-# print("]")
+import numpy as np 
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+feature1 = torch.stack(pred_lst)  # shape: [40, 3]
+feature2 = torch.stack(pred_lst2)    # shape: [40, 3]
+feature3 = torch.stack(pred_lst3)  # shape: [40, 3]
+feature4 = torch.stack(pred_lst4)    # shape: [40, 3]
+# # Merge the features by concatenating them
+merged_features = torch.cat([ feature1, feature2, feature3,feature4], dim=0)
+# merged_features = torch.cat([ feature1, feature2,feature3,feature4], dim=0)
+# # # Reduce dimensions using t-SNE
+tsne = TSNE(n_components=2, random_state=42)
+embedded_features = tsne.fit_transform(merged_features)
+torch.set_printoptions(profile="full")
+print("[")
+for row in embedded_features:
+    print(f"[{row[0]}, {row[1]}],")
+print("]")
 
 
 

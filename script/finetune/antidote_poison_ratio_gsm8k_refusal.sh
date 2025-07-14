@@ -3,7 +3,7 @@
 #SBATCH -N1 --gres=gpu:H100:1
 #SBATCH -t 480                                    # Duration of the job (Ex: 15 mins)
 #SBATCH --mem-per-cpu=5G
-#SBATCH -o antidote_poison_ratio-%j.out                         # Combined output and error messages file
+#SBATCH -o antidote_poison_ratio_gsm8k_refusal-%j.out                         # Combined output and error messages file
 #SBATCH --mail-type=BEGIN,END,FAIL              # Mail preferences
 
 
@@ -13,7 +13,7 @@ module load cuda/11.8.0
 source activate hts
 
 poison_ratio=${1:-0.2}
-dense_ratio=0.1
+dense_ratio=0.05
 bad_sample_num=2000
 sample_num=5000  
 model_path=${3:-meta-llama/Llama-2-7b-hf}   
@@ -28,10 +28,10 @@ cd  ../../                            # Change to working directory
 
 CUDA_VISIBLE_DEVICES=0 python train.py \
 	--model_name_or_path ${model_path}\
-	--lora_folder ckpt/${path_after_slash}_sft  \
+	--lora_folder ckpt/${path_after_slash}_sft_refusal  \
 	--data_path PKU-Alignment/BeaverTails_dangerous \
 	--bf16 True \
-	--output_dir ckpt/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num} \
+	--output_dir ckpt/gsm8k/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}_refusal  \
 	--num_train_epochs 20 \
 	--per_device_train_batch_size 5 \
 	--per_device_eval_batch_size 5 \
@@ -39,7 +39,7 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	--save_strategy "steps" \
 	--save_steps 100000 \
 	--save_total_limit 0 \
-	--learning_rate 1e-4 \
+	--learning_rate 1e-3 \
 	--weight_decay 0.1 \
 	--warmup_ratio 0.1 \
 	--lr_scheduler_type "constant" \
@@ -52,16 +52,16 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	--sample_num $sample_num \
 	--poison_ratio ${poison_ratio} \
 	--label_smoothing_factor  0 \
-	--benign_dataset data/sst2.json \
+	--benign_dataset data/gsm8k.json \
 
 
 CUDA_VISIBLE_DEVICES=0 python train.py \
 	--model_name_or_path ${model_path}  \
-	--lora_folder ckpt/${path_after_slash}_sft  \
-	--lora_folder2 ckpt/sst2/${path_after_slash}_sft_f_${poison_ratio}_${sample_num} \
+	--lora_folder ckpt/${path_after_slash}_sft_refusal   \
+	--lora_folder2 ckpt/gsm8k/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}_refusal  \
 	--data_path PKU-Alignment/BeaverTails_dangerous \
 	--bf16 True \
-	--output_dir ckpt/sst2/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num} \
+	--output_dir ckpt/gsm8k/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}_refusal  \
 	--num_train_epochs 0 \
 	--per_device_train_batch_size 1 \
 	--per_device_eval_batch_size 1 \
@@ -81,28 +81,28 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	--poison_ratio 1 \
 	--sample_num $bad_sample_num \
 	--dense_ratio $dense_ratio \
-	--benign_dataset data/sst2.json \
+	--benign_dataset data/gsm8k.json \
 
 
 cd poison/evaluation  
 
 
 CUDA_VISIBLE_DEVICES=0 python pred.py \
-	--lora_folder ../../ckpt/${path_after_slash}_sft  \
-	--lora_folder2 ../../ckpt/sst2/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num} \
+	--lora_folder ../../ckpt/${path_after_slash}_sft_refusal \
+	--lora_folder2 ../../ckpt/gsm8k/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}_refusal \
 	--model_folder ${model_path} \
-	--output_path ../../data/poison/sst2/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}
+	--output_path ../../data/poison/gsm8k/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}_refusal
 
 
 CUDA_VISIBLE_DEVICES=0 python eval_sentiment.py \
-	--input_path ../../data/poison/sst2/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}
+	--input_path ../../data/poison/gsm8k/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}_refusal
 
 
 
-cd ../../sst2
+cd ../../gsm8k
 
 CUDA_VISIBLE_DEVICES=0 python pred_eval.py   \
-	--lora_folder ../ckpt/${path_after_slash}_sft  \
-	--lora_folder2 ../ckpt/sst2/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num} \
+	--lora_folder ../ckpt/${path_after_slash}_sft_refusal  \
+	--lora_folder2 ../ckpt/gsm8k/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}_refusal \
 	--model_folder ${model_path} \
-	--output_path ../data/sst2/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}
+	--output_path ../data/gsm8k/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}_refusal

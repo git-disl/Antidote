@@ -3,7 +3,7 @@
 #SBATCH -N1 --gres=gpu:H100:1
 #SBATCH -t 480                                    # Duration of the job (Ex: 15 mins)
 #SBATCH --mem-per-cpu=20G
-#SBATCH -o eraser_badsample_gsm8k-%j.out                         # Combined output and error messages file
+#SBATCH -o quantitative_analysis_random-%j.out                         # Combined output and error messages file
 #SBATCH --mail-type=BEGIN,END,FAIL              # Mail preferences
 
 
@@ -27,6 +27,7 @@ echo "The learning rate is: $lr"
 echo "The model path is: $model_path"
 echo "The short model path is: $path_after_slash"
 cd ../../
+
 # antidote
 # CUDA_VISIBLE_DEVICES=0 python analysis_two_datasets.py\
 # 	--model_folder ${model_path}\

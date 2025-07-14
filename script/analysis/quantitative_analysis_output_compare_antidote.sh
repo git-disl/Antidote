@@ -3,7 +3,7 @@
 #SBATCH -N1 --gres=gpu:H100:1
 #SBATCH -t 480                                    # Duration of the job (Ex: 15 mins)
 #SBATCH --mem-per-cpu=20G
-#SBATCH -o eraser_badsample_gsm8k-%j.out                         # Combined output and error messages file
+#SBATCH -o quantitative_analysis_antidote-%j.out                         # Combined output and error messages file
 #SBATCH --mail-type=BEGIN,END,FAIL              # Mail preferences
 
 
@@ -27,12 +27,18 @@ echo "The learning rate is: $lr"
 echo "The model path is: $model_path"
 echo "The short model path is: $path_after_slash"
 cd ../../
-
-
-# random prune
-CUDA_VISIBLE_DEVICES=0 python analysis_two_datasets2.py\
+# antidote
+CUDA_VISIBLE_DEVICES=0 python analysis_two_datasets.py\
 	--model_folder ${model_path}\
 	--lora_folder ckpt/${path_after_slash}_sft \
 	--lora_folder2 ckpt/gsm8k/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}_${lr} \
-	--lora_folder2_after ckpt/gsm8k/${path_after_slash}_antidote_f_0.3_${poison_ratio}_${sample_num}_${bad_sample_num}_${lr}_random \
+	--lora_folder2_after ckpt/gsm8k/${path_after_slash}_antidote_f_${dense_ratio}_${poison_ratio}_${sample_num}_${bad_sample_num}_${lr} \
     --num_test_data 30
+
+# random prune
+# CUDA_VISIBLE_DEVICES=0 python analysis_two_datasets.py\
+# 	--model_folder ${model_path}\
+# 	--lora_folder ckpt/${path_after_slash}_sft \
+# 	--lora_folder2 ckpt/gsm8k/${path_after_slash}_sft_f_${poison_ratio}_${sample_num}_${lr} \
+# 	--lora_folder2_after ckpt/gsm8k/${path_after_slash}_antidote_f_0.3_${poison_ratio}_${sample_num}_${bad_sample_num}_${lr}_random \
+#     --num_test_data 30
