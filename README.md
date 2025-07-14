@@ -45,8 +45,8 @@ We implement a cusomized trainer on top of the original HuggingFace Trainer. To 
 
 
 ## Package requirement
-The package requirement is listed in `requirements.yml`. Please strictly keep the version of some packages as specified in the requirements, e.g., transformers, torch, etc. We notice that our code is not compatible with the newest transformers package. 
-```
+The package requirement is listed in `requirements.txt`. Please strictly keep the version of some packages as specified in the requirements, e.g., transformers, torch, etc. We notice that our code is not compatible with the newest transformers package. 
+
 
 ## Data  preparation
 For finetuning task, we first need to run the following scripts to prepare the sueprvised finetuning data.
@@ -81,9 +81,7 @@ cd ../finetune
 sbatch  antidote_poison_ratio.sh 0.1
 ```
 
-
 For comparison, we can finetune the model with SFT in the same data setting.
-
 ```
 sbatch  sft_poison_ratio.sh 0.1
 cd ../..
