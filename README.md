@@ -6,7 +6,7 @@
 [[`📕 Paper`](https://openreview.net/pdf?id=Arepl4R86m)]  [[`Poster`](antidote_poster.png)]
 
 
-This is unofficial re-implementation of the paper "Antidote: Post-fine-tuning Safety Alignment for Large Language Models against Harmful Fine-tuning" (ICML2025)
+This is unofficial re-implementation of the paper "Antidote: Post-fine-tuning Safety Alignment for Large Language Models against Harmful Fine-tuning Attack" (ICML2025)
 
 
 
