@@ -3,9 +3,11 @@
 
 <h1 align="center">Antidote: Post-fine-tuning Safety Alignment for Large Language Models against Harmful Fine-tuning </h1>
 
+[[`📕 Paper`](https://openreview.net/pdf?id=Arepl4R86m)]  [[`Poster`](antidote_poster.png)]
+
+
 This is unofficial re-implementation of the paper "Antidote: Post-fine-tuning Safety Alignment for Large Language Models against Harmful Fine-tuning" (ICML2025)
 
-[[`📕 Paper`](https://openreview.net/pdf?id=Arepl4R86m)]  [[`Poster`](antidote_poster.png)]
 
 
 ## About Harmful fine-tuning
@@ -86,6 +88,84 @@ For comparison, we can finetune the model with SFT in the same data setting.
 sbatch  sft_poison_ratio.sh 0.1
 cd ../..
 ```
+
+
+## A line of attack/defense designs
+
+We are commited to design attacks and defenses from different angles in the topic of harmful fine-tuning. The currently avaialble work built in the disl group include:
+* Attack: [Virus](https://github.com/git-disl/Virus)
+* Alignment stage defense: [Vaccine](https://github.com/git-disl/Vaccine), [Booster](https://github.com/git-disl/Booster/tree/main)
+* Fine-tuning stage defense: [Lisa](https://github.com/git-disl/Lisa)
+* Post-fine-tuning stage defense: [Antidote](https://arxiv.org/abs/2408.09600)
+* Survey: [Survey](https://arxiv.org/abs/2409.18169)
+
+We always welcome different forms of collaboration. If you are interested, please reach out Tiansheng Huang (thuang374@gatech.edu) for discussion. 
+
+## Papers of harmful fine-tuning attacks/defense in ICML2025
+
+Of note, along with Antidote, there are 7 papers on harmful fine-tuning attacks/defense being accepted by ICML2025. Please consider to check them out if interested.  
+
+* Towards LLM Unlearning Resilient to Relearning Attacks: A Sharpness-Aware Minimization Perspective and Beyond 
+
+* Invariance Makes LLM Unlearning Resilient Even to Unanticipated Downstream Fine-Tuning
+
+* Benign Samples Matter! Fine-tuning On Outlier Benign Samples Severely Breaks Safety 
+
+* Antidote: Post-fine-tuning safety alignment for large language models against harmful fine-tuning
+
+* Vulnerability-Aware Alignment: Mitigating Uneven Forgetting in Harmful Fine-Tuning
+
+* Safe Delta: Consistently Preserving Safety when Fine-Tuning LLMs on Diverse Datasets
+
+* Model Immunization from a Condition Number Perspective
+
+## Citation
+If you find our research interesting, you may cite the following papers. 
+```
+
+@inproceedings{huangantidote,
+  title={Antidote: Post-fine-tuning Safety Alignment for Large Language Models against Harmful Fine-tuning Attack},
+  author={Huang, Tiansheng and Bhattacharya, Gautam and Joshi, Pratik and Kimball, Joshua and Liu, Ling},
+  booktitle={Forty-second International Conference on Machine Learning}
+}
+
+
+@inproceedings{huangbooster,
+  title={Booster: Tackling Harmful Fine-tuning for Large Language Models via Attenuating Harmful Perturbation},
+  author={Huang, Tiansheng and Hu, Sihao and Ilhan, Fatih and Tekin, Selim Furkan and Liu, Ling},
+  booktitle={The Thirteenth International Conference on Learning Representations}
+}
+
+@article{huang2025virus,
+  title={Virus: Harmful Fine-tuning Attack for Large Language Models Bypassing Guardrail Moderation},
+  author={Huang, Tiansheng and Hu, Sihao and Ilhan, Fatih and Tekin, Selim Furkan and Liu, Ling},
+  journal={arXiv preprint arXiv:2501.17433},
+  year={2025}
+}
+
+@article{huang2024harmful,
+  title={Harmful fine-tuning attacks and defenses for large language models: A survey},
+  author={Huang, Tiansheng and Hu, Sihao and Ilhan, Fatih and Tekin, Selim Furkan and Liu, Ling},
+  journal={arXiv preprint arXiv:2409.18169},
+  year={2024}
+}
+
+
+@inproceedings{huanglisa,
+  title={Lisa: Lazy Safety Alignment for Large Language Models against Harmful Fine-tuning Attack},
+  author={Huang, Tiansheng and Hu, Sihao and Ilhan, Fatih and Tekin, Selim Furkan and Liu, Ling},
+  booktitle={The Thirty-eighth Annual Conference on Neural Information Processing Systems}
+}
+
+@inproceedings{huangvaccine,
+  title={Vaccine: Perturbation-aware Alignment for Large Language Models against Harmful Fine-tuning Attack},
+  author={Huang, Tiansheng and Hu, Sihao and Liu, Ling},
+  booktitle={The Thirty-eighth Annual Conference on Neural Information Processing Systems}
+}
+
+```
+
+
 
 
 
