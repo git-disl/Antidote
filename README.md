@@ -3,7 +3,26 @@
 
 <h1 align="center">Antidote: Post-fine-tuning Safety Alignment for Large Language Models against Harmful Fine-tuning </h1>
 
+This is unofficial re-implementation of the paper "Antidote: Post-fine-tuning Safety Alignment for Large Language Models against Harmful Fine-tuning" (ICML2025)
 
+[[`📕 Paper`](https://openreview.net/pdf?id=Arepl4R86m)]  [[`Poster`](antidote_poster.png)]
+
+
+## About Harmful fine-tuning
+Fine-tuning-as-a-service allows users to upload data to service provider (e.g., OpenAI) for fine-tuning the base model. The mode The fine-tuend model is then deployed in the server and serve customized user need. Such a procedure usually contains two sequential stages: i) safety alignment stage-- the model is safety aligned with safety data. ii) fine-tuning stage-- the aligned model produced by the first stage is fine-tuned on user provided data.  
+
+
+**However, such scenario expose serious safety issue,** because the users might intentionally/unintentionally upload harmful data to break down the safety alignment of the victim LLMs.  Specifically, the model suffers from **harmful fine-tuning attack**, the customized LLM forget the alignment knowledge and exhbit harmful behavior after fine-tuning on partial harmful data.   See the following figure for an illustration. 
+
+
+
+<div align="center">
+  <img src="antidote_example.png" width="80%"/>
+</div>
+
+
+
+## About the Antidote method
 
 Antidote is a post-fine-tuning safety alignment method against the threat of harmful fine-tuning. We consider a three-stage scheme for safety-aligned fine-tuning-as-a-service: 
 
